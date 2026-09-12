@@ -39,7 +39,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onProjectsSynced,
 }) => {
   const [tab, setTab] = useState<'signin' | 'signup'>('signin');
-  const [email, setEmail] = useState('somenathmondal143@gmail.com');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -242,9 +242,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     Safari & Chrome Sync
                   </span>
                 </div>
-                <p className="text-xs font-semibold text-stone-900">somenathmondal143@gmail.com</p>
+                <p className="text-xs font-semibold text-stone-900">Cloud Score Library</p>
                 <p className="text-[11px] text-stone-600">
-                  Connect using Google Sign-In to sync your sheet music scores between Safari, Chrome, and all devices.
+                  Sign in or create an account to sync your sheet music scores between Safari, Chrome, and all devices.
                 </p>
               </div>
 
