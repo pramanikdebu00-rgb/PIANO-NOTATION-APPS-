@@ -151,7 +151,9 @@ export class ProjectStorageService {
    * Delete a project from saved list.
    */
   public static deleteProject(projectId: string): SavedProject[] {
-    const projects = this.getSavedProjects().filter((p) => p.id !== projectId && p.score.id !== projectId);
+    const projects = this.getSavedProjects().filter(
+      (p) => p.id !== projectId && p.score?.id !== projectId
+    );
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
     } catch (e) {

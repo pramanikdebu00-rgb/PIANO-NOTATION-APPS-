@@ -68,6 +68,7 @@ import { UnsavedChangesModal } from './components/modals/UnsavedChangesModal';
 import { SaveProjectModal } from './components/modals/SaveProjectModal';
 import { AuthModal } from './components/auth/AuthModal';
 import { SongPropertiesModal } from './components/modals/SongPropertiesModal';
+import { shortcutManager } from './services/shortcutManager';
 
 export default function App() {
   // Navigation & Startup view state: persist across refreshes
@@ -189,37 +190,45 @@ export default function App() {
 
   useEffect(() => {
     if (!auth) return;
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    let unsubscribeProjects: (() => void) | null = null;
+
+    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
-      if (user) {
-        try {
-          setIsSyncingCloud(true);
-          const cloudProjects = await cloudProjectService.getUserProjects(user.uid);
-          if (cloudProjects.length > 0) {
-            setSavedProjects((local) => {
-              const map = new Map<string, SavedProject>();
-              local.forEach((p) => map.set(p.id, p));
-              cloudProjects.forEach((p) => map.set(p.id, p));
-              const merged = Array.from(map.values());
-              ProjectStorageService.saveProjects(merged);
-              return merged;
-            });
+      if (unsubscribeProjects) {
+        unsubscribeProjects();
+        unsubscribeProjects = null;
+      }
+
+      if (user && !user.isAnonymous) {
+        setIsSyncingCloud(true);
+        // Real-time synchronization across Safari, Chrome, and devices
+        unsubscribeProjects = cloudProjectService.subscribeToUserProjects(
+          user.uid,
+          (cloudProjects) => {
+            setIsSyncingCloud(false);
+            if (cloudProjects.length > 0) {
+              setSavedProjects(cloudProjects);
+              ProjectStorageService.saveProjects(cloudProjects);
+            }
+          },
+          (err) => {
+            console.warn('Cloud projects subscription warning:', err);
+            setIsSyncingCloud(false);
           }
-        } catch (err) {
-          console.warn('Cloud sync error on auth state change:', err);
-        } finally {
-          setIsSyncingCloud(false);
-        }
+        );
       } else {
-        // Seamlessly authenticate anonymously so cloud saves work immediately
-        try {
-          await signInAnonymously(auth);
-        } catch {
-          // If anonymous sign-in is disabled, continue with local sync
-        }
+        // Unauthenticated / local offline mode
+        const local = ProjectStorageService.getSavedProjects();
+        setSavedProjects(local);
       }
     });
-    return () => unsubscribe();
+
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeProjects) {
+        unsubscribeProjects();
+      }
+    };
   }, []);
 
   const showToast = useCallback((msg: string) => {
@@ -454,14 +463,17 @@ export default function App() {
   }, [handleSelectProject]);
 
   const handleDeleteProject = useCallback((projectId: string) => {
+    const targetProj = savedProjects.find((p) => p.id === projectId || p.score?.id === projectId);
+    const projectName = targetProj?.name || 'Project';
     const updated = ProjectStorageService.deleteProject(projectId);
     setSavedProjects(updated);
+    showToast(`Deleted "${projectName}" successfully`);
     if (currentUser) {
       cloudProjectService.deleteProject(currentUser.uid, projectId).catch((err) => {
         console.warn('Cloud delete error:', err);
       });
     }
-  }, [currentUser]);
+  }, [currentUser, savedProjects, showToast]);
 
   const handleNavigateHome = useCallback(() => {
     // Auto-save current project state internally
@@ -2054,7 +2066,11 @@ export default function App() {
           }
         } else if (measureIdx > 0) {
           const prevM = score.measures[measureIdx - 1];
-          const prevTotal = getMeasureTotalBeats(prevM, score.metadata.initialTimeSignature);
+          const prevTotal = getMeasureTotalBeats(
+            prevM,
+            score.metadata.initialTimeSignature,
+            score.metadata.indianTaal
+          );
           const prevBeatVal = getEffectiveBeatValue(score, measureIdx - 1, prevTotal - 1);
           setSelection({
             measureId: prevM.id,
@@ -2593,357 +2609,296 @@ export default function App() {
     }
   }, [selection, score, pushScoreState]);
 
-  // Keyboard Shortcuts Listener
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Only process shortcuts when in notation editor
-      if (viewMode !== 'editor') {
-        return;
-      }
+  // Shortcut Handlers: Note Entry, Space Tool, and Navigation
+  const handleInsertNoteFromShortcut = useCallback(
+    (step: NoteStep) => {
+      const octave = activeHand === 'LH' ? 3 : 4;
+      const pitch: Pitch = {
+        step,
+        octave,
+        accidental: selectedAccidental,
+      };
+      handlePianotasticNoteInput(pitch);
+    },
+    [activeHand, selectedAccidental, handlePianotasticNoteInput]
+  );
 
-      // Ignore if user is in an input or textarea or contenteditable element
-      const targetEl = e.target as HTMLElement | null;
-      const activeEl = document.activeElement as HTMLElement | null;
-      if (
-        ['INPUT', 'TEXTAREA', 'SELECT'].includes(targetEl?.tagName || '') ||
-        ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeEl?.tagName || '') ||
-        targetEl?.isContentEditable ||
-        activeEl?.isContentEditable
-      ) {
-        return;
-      }
+  const handleAddChordSymbolShortcut = useCallback(() => {
+    if (!latestSelectionRef.current.measureId && latestScoreRef.current.measures[0]) {
+      setSelection((sel) => ({
+        ...sel,
+        measureId: latestScoreRef.current.measures[0].id,
+        beatIndex: sel.beatIndex !== undefined ? sel.beatIndex : 0,
+      }));
+    }
+    setIsChordDialogOpen(true);
+  }, []);
 
-      // Ignore shortcuts if modal or dialog is open
-      if (
-        isNewScoreModalOpen ||
-        isSaveAsModalOpen ||
-        isLibraryModalOpen ||
-        isSongPropertiesModalOpen ||
-        isCustomTimeSigOpen ||
-        isChordDialogOpen ||
-        isShortcutsOpen ||
-        isAddMeasuresModalOpen ||
-        Boolean(textModalConfig?.isOpen)
-      ) {
-        return;
-      }
+  const handleInsertVerticalSpaceShortcut = useCallback(() => {
+    const curScore = latestScoreRef.current;
+    const curSel = latestSelectionRef.current;
+    const currentMeasureId = curSel.measureId || curScore.measures[0]?.id;
+    if (!currentMeasureId) return;
+    handleAddSpace(currentMeasureId, 30);
+    setToolMode('space');
+  }, [handleAddSpace]);
 
-      // Undo / Redo
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
-        e.preventDefault();
-        if (e.shiftKey) {
-          handleRedo();
-        } else {
-          handleUndo();
+  const handleIncreaseSelectedSpaceShortcut = useCallback(() => {
+    const curScore = latestScoreRef.current;
+    const curSel = latestSelectionRef.current;
+    const existingSpaces = curScore.spacingObjects || [];
+
+    let targetSpace = existingSpaces.find((s) => s.id === curSel.spacingObjectId);
+    if (!targetSpace && curSel.measureId) {
+      targetSpace = existingSpaces.find((s) => s.afterMeasureId === curSel.measureId);
+    }
+
+    if (targetSpace) {
+      const newAmount = Math.min(300, (targetSpace.amount || 0) + 10);
+      handleUpdateSpace(targetSpace.id, { amount: newAmount });
+      showToast(`Increased vertical space (${newAmount}px)`);
+    } else {
+      const targetMeasureId = curSel.measureId || curScore.measures[0]?.id;
+      if (targetMeasureId) {
+        handleAddSpace(targetMeasureId, 30);
+      }
+    }
+  }, [handleUpdateSpace, handleAddSpace, showToast]);
+
+  const handleDecreaseSelectedSpaceShortcut = useCallback(() => {
+    const curScore = latestScoreRef.current;
+    const curSel = latestSelectionRef.current;
+    const existingSpaces = curScore.spacingObjects || [];
+
+    let targetSpace = existingSpaces.find((s) => s.id === curSel.spacingObjectId);
+    if (!targetSpace && curSel.measureId) {
+      targetSpace = existingSpaces.find((s) => s.afterMeasureId === curSel.measureId);
+    }
+
+    if (targetSpace) {
+      const newAmount = Math.max(5, (targetSpace.amount || 0) - 10);
+      handleUpdateSpace(targetSpace.id, { amount: newAmount });
+      showToast(`Decreased vertical space (${newAmount}px)`);
+    }
+  }, [handleUpdateSpace, showToast]);
+
+  const handleNavigateHorizontal = useCallback((direction: 'left' | 'right') => {
+    const curScore = latestScoreRef.current;
+    const curSel = latestSelectionRef.current;
+    const currentMeasureId = curSel.measureId || curScore.measures[0]?.id;
+    const measureIdx = Math.max(0, curScore.measures.findIndex((m) => m.id === currentMeasureId));
+    const curMeasure = curScore.measures[measureIdx];
+    if (!curMeasure) return;
+
+    const curBeat = curSel.beatIndex !== undefined ? curSel.beatIndex : 0;
+    const curSub = curSel.subBeatIndex || 0;
+    const pickup = curScore.metadata.pickupBeat || 1;
+
+    if (direction === 'left') {
+      if (curSub > 0) {
+        setSelection((sel) => ({ ...sel, subBeatIndex: curSub - 1 }));
+      } else if (curBeat > 0) {
+        if (!isBeatLockedByPickup(curMeasure.measureNumber, curBeat - 1, pickup)) {
+          const prevBeatVal = getEffectiveBeatValue(curScore, measureIdx, curBeat - 1);
+          setSelection((sel) => ({
+            ...sel,
+            beatIndex: curBeat - 1,
+            subBeatIndex: Math.max(0, prevBeatVal - 1),
+          }));
         }
-        return;
+      } else if (measureIdx > 0) {
+        const prevM = curScore.measures[measureIdx - 1];
+        const prevTotal = getMeasureTotalBeats(
+          prevM,
+          curScore.metadata.initialTimeSignature,
+          curScore.metadata.indianTaal
+        );
+        const prevBeatVal = getEffectiveBeatValue(curScore, measureIdx - 1, prevTotal - 1);
+        setSelection({
+          measureId: prevM.id,
+          staff: activeHand === 'LH' ? 'LH' : 'RH',
+          eventId: null,
+          beatIndex: prevTotal - 1,
+          subBeatIndex: Math.max(0, prevBeatVal - 1),
+        });
       }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
-        e.preventDefault();
-        handleRedo();
-        return;
-      }
+    } else {
+      const totalBeats = getMeasureTotalBeats(
+        curMeasure,
+        curScore.metadata.initialTimeSignature,
+        curScore.metadata.indianTaal
+      );
+      const effVal = getEffectiveBeatValue(curScore, measureIdx, curBeat);
 
-      // Clipboard Shortcuts
-      // Cut (Ctrl+X / Cmd+X)
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'x') {
-        e.preventDefault();
-        handleCut();
-        return;
+      if (curSub + 1 < effVal) {
+        setSelection((sel) => ({ ...sel, subBeatIndex: curSub + 1 }));
+      } else if (curBeat < totalBeats - 1) {
+        setSelection((sel) => ({ ...sel, beatIndex: curBeat + 1, subBeatIndex: 0 }));
+      } else if (measureIdx < curScore.measures.length - 1) {
+        const nextM = curScore.measures[measureIdx + 1];
+        setSelection({
+          measureId: nextM.id,
+          staff: activeHand === 'LH' ? 'LH' : 'RH',
+          eventId: null,
+          beatIndex: 0,
+          subBeatIndex: 0,
+        });
       }
+    }
+  }, [activeHand]);
 
-      // Copy (Ctrl+C / Cmd+C)
-      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'c') {
-        e.preventDefault();
-        handleCopy();
-        return;
-      }
-
-      // Paste (Ctrl+V / Cmd+V)
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
-        e.preventDefault();
-        handlePaste();
-        return;
-      }
-
-      // File Menu Shortcuts
-      // Save Project (Ctrl+S / Cmd+S)
-      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 's') {
-        e.preventDefault();
-        handleSaveProject();
-        return;
-      }
-
-      // Save As (Ctrl+Shift+S / Cmd+Shift+S)
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 's') {
-        e.preventDefault();
-        setIsSaveAsModalOpen(true);
-        return;
-      }
-
-      // Print (Ctrl+P / Cmd+P)
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {
-        e.preventDefault();
-        setViewMode('print');
-        return;
-      }
-
-      // Open Project (Ctrl+O / Cmd+O)
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
-        e.preventDefault();
-        requestOpenProject();
-        return;
-      }
-
-      // New Project (Ctrl+N / Cmd+N)
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
-        e.preventDefault();
-        requestNewProject();
-        return;
-      }
-
-      // Song Properties (Alt+Enter)
-      if (e.altKey && e.key === 'Enter') {
-        e.preventDefault();
-        setIsSongPropertiesModalOpen(true);
-        return;
-      }
-
-      // Space -> Play / Pause from selected measure/beat/subdivision
-      if (e.code === 'Space') {
-        e.preventDefault();
-        if (audioEngine.getIsPlaying()) {
-          audioEngine.pausePlayback();
-        } else {
-          let mIdx = 0;
-          let bIdx = 0;
-          let subIdx = 0;
-          if (selection?.measureId) {
-            const found = score.measures.findIndex((m) => m.id === selection.measureId);
-            if (found !== -1) {
-              mIdx = found;
-              bIdx = selection.beatIndex !== undefined ? selection.beatIndex : 0;
-              subIdx = selection.subBeatIndex !== undefined ? selection.subBeatIndex : 0;
-            }
-          } else if (playbackPosition) {
-            mIdx = playbackPosition.measureIndex;
-            bIdx = Math.floor(playbackPosition.beat);
-          }
-          audioEngine.playScore(score, mIdx, bIdx, subIdx);
+  const handleTogglePlayPauseShortcut = useCallback(() => {
+    if (audioEngine.getIsPlaying()) {
+      audioEngine.pausePlayback();
+    } else {
+      const curScore = latestScoreRef.current;
+      const curSel = latestSelectionRef.current;
+      let mIdx = 0;
+      let bIdx = 0;
+      let subIdx = 0;
+      if (curSel?.measureId) {
+        const found = curScore.measures.findIndex((m) => m.id === curSel.measureId);
+        if (found !== -1) {
+          mIdx = found;
+          bIdx = curSel.beatIndex !== undefined ? curSel.beatIndex : 0;
+          subIdx = curSel.subBeatIndex !== undefined ? curSel.subBeatIndex : 0;
         }
-        return;
+      } else if (playbackPosition) {
+        mIdx = playbackPosition.measureIndex;
+        bIdx = Math.floor(playbackPosition.beat);
       }
+      audioEngine.playScore(curScore, mIdx, bIdx, subIdx);
+    }
+  }, [playbackPosition]);
 
-      // Tool switching
-      if (e.key.toLowerCase() === 'v') {
-        setToolMode('select');
-        return;
-      }
-      if (e.key.toLowerCase() === 's') {
-        setToolMode('space');
+  const isAnyModalOpen = useCallback(() => {
+    return (
+      isNewScoreModalOpen ||
+      isSaveAsModalOpen ||
+      isSaveProjectModalOpen ||
+      isLibraryModalOpen ||
+      isSongPropertiesModalOpen ||
+      isCustomTimeSigOpen ||
+      isChordDialogOpen ||
+      isShortcutsOpen ||
+      isAddMeasuresModalOpen ||
+      isMidiModalOpen ||
+      isAuthModalOpen ||
+      Boolean(textModalConfig?.isOpen) ||
+      Boolean(unsavedModalConfig?.isOpen)
+    );
+  }, [
+    isNewScoreModalOpen,
+    isSaveAsModalOpen,
+    isSaveProjectModalOpen,
+    isLibraryModalOpen,
+    isSongPropertiesModalOpen,
+    isCustomTimeSigOpen,
+    isChordDialogOpen,
+    isShortcutsOpen,
+    isAddMeasuresModalOpen,
+    isMidiModalOpen,
+    isAuthModalOpen,
+    textModalConfig,
+    unsavedModalConfig,
+  ]);
+
+  const handleSetToolModeFromShortcut = useCallback(
+    (mode: 'select' | 'note' | 'rest' | 'lyrics' | 'text' | 'space') => {
+      setToolMode(mode);
+      if (mode === 'space') {
         showToast('Space tool active (↕) — Drag or click between systems to adjust vertical space');
-        return;
       }
-      if (e.key.toLowerCase() === 'n') {
-        setToolMode('note');
-        return;
-      }
-      if (e.key.toLowerCase() === 'r') {
-        setToolMode('rest');
-        return;
-      }
-      if (e.key.toLowerCase() === 'l') {
-        setToolMode('lyrics');
-        return;
-      }
-      if (e.key.toLowerCase() === 't') {
-        setToolMode('text');
-        return;
-      }
+    },
+    [showToast]
+  );
 
-      // Shift + C -> Open Chord Symbol Dialog (Must require Shift so normal C enters pitch)
-      if (e.shiftKey && (e.key === 'C' || e.key === 'c' || e.code === 'KeyC')) {
-        e.preventDefault();
-        setIsChordDialogOpen(true);
-        return;
-      }
+  // Register Centralized Keyboard Shortcuts
+  useEffect(() => {
+    const unregister = shortcutManager.registerHandlers({
+      isEditorActive: () => latestViewModeRef.current === 'editor',
+      isModalOpen: isAnyModalOpen,
 
-      // Note Value shortcuts: 1..4 and F1..F4 (Pianotastic notation workflow)
-      if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
-        if (e.key === '1' || e.key === 'F1' || e.code === 'Digit1' || e.code === 'Numpad1' || e.code === 'F1') {
-          e.preventDefault();
-          handleChangeBeatValue(1);
-          return;
-        }
-        if (e.key === '2' || e.key === 'F2' || e.code === 'Digit2' || e.code === 'Numpad2' || e.code === 'F2') {
-          e.preventDefault();
-          handleChangeBeatValue(2);
-          return;
-        }
-        if (e.key === '3' || e.key === 'F3' || e.code === 'Digit3' || e.code === 'Numpad3' || e.code === 'F3') {
-          e.preventDefault();
-          handleChangeBeatValue(3);
-          return;
-        }
-        if (e.key === '4' || e.key === 'F4' || e.code === 'Digit4' || e.code === 'Numpad4' || e.code === 'F4') {
-          e.preventDefault();
-          handleChangeBeatValue(4);
-          return;
-        }
-      }
+      // Note entry: C, A, B, D, E, F, G
+      onInsertNote: handleInsertNoteFromShortcut,
 
-      // Intentional empty subdivision (dot / period '.') in Pianotastic notation
-      if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key === '.') {
-        e.preventDefault();
-        handleAdvanceSubdivisionWithoutNote();
-        return;
-      }
+      // Chord symbol: Shift + C
+      onAddChordSymbol: handleAddChordSymbolShortcut,
 
-      // Delete / Backspace -> Clears selected text or beat to '—' or subdivision to '.', or moves back
-      if (e.key === 'Delete' || e.key === 'Backspace') {
-        e.preventDefault();
-        if (selection.textAnnotationId || selection.selectionType === 'text') {
-          const textId = selection.textAnnotationId || (selection.eventId as string);
+      // Values: 1, 2, 3, 4 and F1, F2, F3, F4
+      onSetValue: (val) => handleChangeBeatValue(val),
+
+      // Edit: Undo & Redo
+      onUndo: handleUndo,
+      onRedo: handleRedo,
+
+      // Clipboard: Copy, Paste, Cut
+      onCopy: handleCopy,
+      onPaste: handlePaste,
+      onCut: handleCut,
+
+      // Space Tool: Shift + Enter, Ctrl/Cmd + Shift + Up, Ctrl/Cmd + Shift + Down
+      onInsertVerticalSpace: handleInsertVerticalSpaceShortcut,
+      onIncreaseSelectedSpace: handleIncreaseSelectedSpaceShortcut,
+      onDecreaseSelectedSpace: handleDecreaseSelectedSpaceShortcut,
+
+      // Canonical Notation Workflows
+      onDelete: () => {
+        const curSel = latestSelectionRef.current;
+        if (curSel.textAnnotationId || curSel.selectionType === 'text') {
+          const textId = curSel.textAnnotationId || (curSel.eventId as string);
           if (textId) {
             handleDeleteTextAnnotation(textId);
             return;
           }
         }
         handleClearCurrentBeat();
-        return;
-      }
+      },
+      onAdvanceEmptySubdivision: handleAdvanceSubdivisionWithoutNote,
+      onToggleLineBreak: handleToggleLineBreak,
+      onNavigateHorizontal: handleNavigateHorizontal,
+      onTransposeVertical: handleTransposeSelected,
+      onTogglePlayPause: handleTogglePlayPauseShortcut,
 
-      // Enter -> Manual Line Break
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        handleToggleLineBreak();
-        return;
-      }
+      // File & Tool Workflows
+      onSave: handleSaveProject,
+      onSaveAs: () => setIsSaveAsModalOpen(true),
+      onPrint: () => setViewMode('print'),
+      onOpenProject: requestOpenProject,
+      onNewProject: requestNewProject,
+      onOpenSongProperties: () => setIsSongPropertiesModalOpen(true),
+      onSetToolMode: handleSetToolModeFromShortcut,
+    });
 
-      // Horizontal arrow navigation across beats and subdivisions
-      if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        const currentMeasureId = selection.measureId || score.measures[0]?.id;
-        const measureIdx = Math.max(0, score.measures.findIndex((m) => m.id === currentMeasureId));
-        const curMeasure = score.measures[measureIdx];
-        if (!curMeasure) return;
-        const curBeat = selection.beatIndex !== undefined ? selection.beatIndex : 0;
-        const curSub = selection.subBeatIndex || 0;
-        const pickup = score.metadata.pickupBeat || 1;
-
-        if (curSub > 0) {
-          // Move to previous subdivision within this beat
-          setSelection((sel) => ({ ...sel, subBeatIndex: curSub - 1 }));
-        } else if (curBeat > 0) {
-          if (!isBeatLockedByPickup(curMeasure.measureNumber, curBeat - 1, pickup)) {
-            const prevBeatVal = getEffectiveBeatValue(score, measureIdx, curBeat - 1);
-            setSelection((sel) => ({
-              ...sel,
-              beatIndex: curBeat - 1,
-              subBeatIndex: Math.max(0, prevBeatVal - 1),
-            }));
-          }
-        } else if (measureIdx > 0) {
-          const prevM = score.measures[measureIdx - 1];
-          const prevTotal = getMeasureTotalBeats(prevM, score.metadata.initialTimeSignature);
-          const prevBeatVal = getEffectiveBeatValue(score, measureIdx - 1, prevTotal - 1);
-          setSelection({
-            measureId: prevM.id,
-            staff: activeHand === 'LH' ? 'LH' : 'RH',
-            eventId: null,
-            beatIndex: prevTotal - 1,
-            subBeatIndex: Math.max(0, prevBeatVal - 1),
-          });
-        }
-        return;
-      }
-
-      if (e.key === 'ArrowRight') {
-        e.preventDefault();
-        const currentMeasureId = selection.measureId || score.measures[0]?.id;
-        const measureIdx = Math.max(0, score.measures.findIndex((m) => m.id === currentMeasureId));
-        const curMeasure = score.measures[measureIdx];
-        if (!curMeasure) return;
-        const curBeat = selection.beatIndex !== undefined ? selection.beatIndex : 0;
-        const curSub = selection.subBeatIndex || 0;
-        const totalBeats = getMeasureTotalBeats(curMeasure, score.metadata.initialTimeSignature);
-        const effVal = getEffectiveBeatValue(score, measureIdx, curBeat);
-
-        if (curSub + 1 < effVal) {
-          // Move to next subdivision within this beat
-          setSelection((sel) => ({ ...sel, subBeatIndex: curSub + 1 }));
-        } else if (curBeat < totalBeats - 1) {
-          setSelection((sel) => ({ ...sel, beatIndex: curBeat + 1, subBeatIndex: 0 }));
-        } else if (measureIdx < score.measures.length - 1) {
-          const nextM = score.measures[measureIdx + 1];
-          setSelection({
-            measureId: nextM.id,
-            staff: activeHand === 'LH' ? 'LH' : 'RH',
-            eventId: null,
-            beatIndex: 0,
-            subBeatIndex: 0,
-          });
-        }
-        return;
-      }
-
-      // Vertical arrows -> Transposition
-      if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        handleTransposeSelected(1);
-        return;
-      }
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        handleTransposeSelected(-1);
-        return;
-      }
-
-      // Direct Computer Pitch Keys: C, D, E, F, G, A, B
-      const upper = e.key.toUpperCase();
-      if (
-        !e.ctrlKey &&
-        !e.metaKey &&
-        !e.altKey &&
-        !e.shiftKey &&
-        ['C', 'D', 'E', 'F', 'G', 'A', 'B'].includes(upper)
-      ) {
-        e.preventDefault();
-        const octave = activeHand === 'LH' ? 3 : 4;
-        const pitch: Pitch = {
-          step: upper as NoteStep,
-          octave,
-          accidental: selectedAccidental,
-        };
-        handlePianotasticNoteInput(pitch);
-      }
+    return () => {
+      unregister();
     };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
   }, [
+    isAnyModalOpen,
+    handleInsertNoteFromShortcut,
+    handleAddChordSymbolShortcut,
+    handleChangeBeatValue,
     handleUndo,
     handleRedo,
+    handleCopy,
+    handlePaste,
+    handleCut,
+    handleInsertVerticalSpaceShortcut,
+    handleIncreaseSelectedSpaceShortcut,
+    handleDecreaseSelectedSpaceShortcut,
+    handleDeleteTextAnnotation,
     handleClearCurrentBeat,
     handleAdvanceSubdivisionWithoutNote,
     handleToggleLineBreak,
+    handleNavigateHorizontal,
     handleTransposeSelected,
-    handlePianotasticNoteInput,
-    handleChangeBeatValue,
-    score,
-    playbackPosition,
-    selection,
-    activeHand,
-    selectedAccidental,
-    viewMode,
-    isNewScoreModalOpen,
-    isSaveAsModalOpen,
-    isLibraryModalOpen,
-    isCustomTimeSigOpen,
-    isChordDialogOpen,
-    isShortcutsOpen,
-    isAddMeasuresModalOpen,
+    handleTogglePlayPauseShortcut,
+    handleSaveProject,
+    requestOpenProject,
+    requestNewProject,
+    handleSetToolModeFromShortcut,
   ]);
+
 
   // Web MIDI note input listener
   useEffect(() => {
@@ -3149,6 +3104,7 @@ export default function App() {
             onCopy={handleCopy}
             onPaste={handlePaste}
             hasClipboardContent={Boolean(clipboardData)}
+            onToggleDoubleBarline={() => handleToggleDoubleBarline(selection.measureId || score.measures[0]?.id)}
           />
         );
       })()}
@@ -3267,12 +3223,17 @@ export default function App() {
         />
       </div>
 
-      {/* Virtual Piano Expandable Keyboard (88-Keys Default) */}
+      {/* Virtual Piano Expandable Keyboard (Dynamic 61 / 76 / 88 keys) */}
       <VirtualPiano
         isOpen={isVirtualPianoOpen}
         onClose={() => setIsVirtualPianoOpen(false)}
         onKeyPress={handlePianotasticNoteInput}
         selectedAccidental={selectedAccidental}
+        keyboardSize={score.layoutSettings.keyboardLayout || score.metadata.keyboardLayout || '61'}
+        onKeyboardSizeChange={(sz) => {
+          handleUpdateLayout({ keyboardLayout: sz });
+          handleUpdateMetadata({ keyboardLayout: sz });
+        }}
       />
 
       {/* 6. Bottom Playback & Control Bar */}

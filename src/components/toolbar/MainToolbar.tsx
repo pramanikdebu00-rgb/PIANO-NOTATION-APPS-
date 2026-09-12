@@ -37,6 +37,7 @@ interface MainToolbarProps {
   onCopy?: () => void;
   onPaste?: () => void;
   hasClipboardContent?: boolean;
+  onToggleDoubleBarline?: () => void;
 }
 
 export const MainToolbar: React.FC<MainToolbarProps> = ({
@@ -55,6 +56,7 @@ export const MainToolbar: React.FC<MainToolbarProps> = ({
   onCopy,
   onPaste,
   hasClipboardContent = false,
+  onToggleDoubleBarline,
 }) => {
   const tools: { id: ToolMode; label: string; icon: React.ReactNode; shortcut: string }[] = [
     { id: 'select', label: 'Select', icon: <MousePointer className="w-3.5 h-3.5" />, shortcut: 'V' },
@@ -219,6 +221,16 @@ export const MainToolbar: React.FC<MainToolbarProps> = ({
                 className="p-1 rounded text-stone-700 hover:bg-stone-100 hover:text-stone-900 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
               >
                 <ClipboardPaste className="w-3.5 h-3.5" />
+              </button>
+            )}
+            {onToggleDoubleBarline && (
+              <button
+                id="toolbar-double-barline-btn"
+                onClick={onToggleDoubleBarline}
+                title="Toggle Double Barline (||) on selected bar(s)"
+                className="px-1.5 py-0.5 rounded font-bold text-xs font-mono text-stone-700 hover:bg-stone-100 hover:text-stone-900 border border-stone-200 transition-colors"
+              >
+                ||
               </button>
             )}
           </div>

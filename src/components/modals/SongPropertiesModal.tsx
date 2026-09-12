@@ -34,6 +34,17 @@ export const SongPropertiesModal: React.FC<SongPropertiesModalProps> = ({
   const [keyboardLayout, setKeyboardLayout] = useState<'61' | '76' | '88'>(
     layoutSettings.keyboardLayout || metadata.keyboardLayout || '61'
   );
+  const [showHeader, setShowHeader] = useState<boolean>(layoutSettings.showHeader ?? true);
+  const [showFooter, setShowFooter] = useState<boolean>(layoutSettings.showFooter ?? true);
+  const [footerCustomText, setFooterCustomText] = useState<string>(
+    layoutSettings.footerCustomText ?? (metadata.copyright || '© Pianotastic Academy')
+  );
+  const [footerPageNumbering, setFooterPageNumbering] = useState<'simple' | 'none'>(
+    layoutSettings.footerPageNumbering === 'none' ? 'none' : 'simple'
+  );
+  const [footerShowOnAllPages, setFooterShowOnAllPages] = useState<boolean>(
+    layoutSettings.footerShowOnAllPages ?? true
+  );
 
   useEffect(() => {
     if (isOpen) {
@@ -48,6 +59,11 @@ export const SongPropertiesModal: React.FC<SongPropertiesModalProps> = ({
       setTimeSigNum(metadata.initialTimeSignature?.numerator || 4);
       setTimeSigDen(metadata.initialTimeSignature?.denominator || 4);
       setKeyboardLayout(layoutSettings.keyboardLayout || metadata.keyboardLayout || '61');
+      setShowHeader(layoutSettings.showHeader ?? true);
+      setShowFooter(layoutSettings.showFooter ?? true);
+      setFooterCustomText(layoutSettings.footerCustomText ?? (metadata.copyright || '© Pianotastic Academy'));
+      setFooterPageNumbering(layoutSettings.footerPageNumbering === 'none' ? 'none' : 'simple');
+      setFooterShowOnAllPages(layoutSettings.footerShowOnAllPages ?? true);
     }
   }, [isOpen, metadata, layoutSettings]);
 
@@ -74,6 +90,11 @@ export const SongPropertiesModal: React.FC<SongPropertiesModalProps> = ({
 
     onUpdateLayout({
       keyboardLayout,
+      showHeader,
+      showFooter,
+      footerCustomText: footerCustomText.trim(),
+      footerPageNumbering,
+      footerShowOnAllPages,
     });
 
     onClose();
@@ -351,6 +372,97 @@ export const SongPropertiesModal: React.FC<SongPropertiesModalProps> = ({
               placeholder="e.g. © 2026 Pianotastic Academy. All rights reserved."
               className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-hidden"
             />
+          </div>
+
+          {/* Header & Footer Independent Settings */}
+          <div className="pt-3 border-t border-stone-100 space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-stone-800 uppercase tracking-wide">
+                Header & Footer Settings
+              </label>
+            </div>
+
+            {/* Header Settings */}
+            <div className="p-3 bg-stone-50 rounded-xl border border-stone-200 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="font-semibold text-xs text-stone-800">Score Header (Page 1)</div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={showHeader}
+                    onChange={(e) => setShowHeader(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-9 h-5 bg-stone-300 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-stone-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-600"></div>
+                </label>
+              </div>
+              <p className="text-[11px] text-stone-500">
+                Displays Title, Subtitle, Composer, Tempo, and Time Signature at the top of the first page.
+              </p>
+            </div>
+
+            {/* Footer Settings */}
+            <div className="p-3 bg-stone-50 rounded-xl border border-stone-200 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="font-semibold text-xs text-stone-800">Score Footer (Optional)</div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={showFooter}
+                    onChange={(e) => setShowFooter(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-9 h-5 bg-stone-300 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-stone-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-600"></div>
+                </label>
+              </div>
+
+              {showFooter && (
+                <div className="space-y-2 pt-1 border-t border-stone-200/60">
+                  <div>
+                    <label className="block text-[11px] font-medium text-stone-600 mb-1">
+                      Footer Text
+                    </label>
+                    <input
+                      type="text"
+                      value={footerCustomText}
+                      onChange={(e) => setFooterCustomText(e.target.value)}
+                      placeholder="e.g. © Pianotastic Academy"
+                      className="w-full px-2.5 py-1.5 border border-stone-300 rounded-md text-xs bg-white focus:ring-1 focus:ring-amber-500 outline-hidden"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <div>
+                      <label className="block text-[11px] font-medium text-stone-600 mb-1">
+                        Page Numbering
+                      </label>
+                      <select
+                        value={footerPageNumbering}
+                        onChange={(e) => setFooterPageNumbering(e.target.value as 'simple' | 'none')}
+                        className="w-full px-2 py-1.5 border border-stone-300 rounded-md text-xs bg-white font-medium text-stone-700"
+                      >
+                        <option value="simple">Simple Numbers (1, 2, 3...)</option>
+                        <option value="none">No Page Numbers</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-medium text-stone-600 mb-1">
+                        Pages
+                      </label>
+                      <select
+                        value={footerShowOnAllPages ? 'all' : 'from2'}
+                        onChange={(e) => setFooterShowOnAllPages(e.target.value === 'all')}
+                        className="w-full px-2 py-1.5 border border-stone-300 rounded-md text-xs bg-white font-medium text-stone-700"
+                      >
+                        <option value="all">Show on All Pages</option>
+                        <option value="from2">Pages 2+ Only</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 

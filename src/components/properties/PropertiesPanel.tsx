@@ -177,7 +177,11 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
     : undefined;
 
   const totalBeats = activeMeasure
-    ? getMeasureTotalBeats(activeMeasure, score.metadata.initialTimeSignature)
+    ? getMeasureTotalBeats(
+        activeMeasure,
+        score.metadata.initialTimeSignature,
+        score.metadata.indianTaal
+      )
     : 4;
 
   const effectiveVal = activeMeasure
@@ -918,7 +922,11 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                         onSelectBeat(activeMeasure.id, beatIndex - 1, 0);
                       } else if (measureIdx > 0) {
                         const prevM = score.measures[measureIdx - 1];
-                        const prevTotal = getMeasureTotalBeats(prevM, score.metadata.initialTimeSignature);
+                        const prevTotal = getMeasureTotalBeats(
+                          prevM,
+                          score.metadata.initialTimeSignature,
+                          score.metadata.indianTaal
+                        );
                         onSelectBeat(prevM.id, prevTotal - 1, 0);
                       }
                     }
@@ -1714,6 +1722,64 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                   onChange={(e) => onUpdateScoreMetadata({ tempoBpm: Number(e.target.value) })}
                   className="w-full accent-amber-600"
                 />
+              </div>
+
+              {/* Header & Footer Independent Settings */}
+              <div className="pt-2 border-t border-stone-200 space-y-2">
+                <span className="font-bold text-stone-800 text-[10px] uppercase tracking-wide block">
+                  Header & Footer (Independent)
+                </span>
+
+                <div className="flex items-center justify-between text-xs py-1">
+                  <span className="font-medium text-stone-700">Show Header</span>
+                  <input
+                    type="checkbox"
+                    checked={score.layoutSettings.showHeader !== false}
+                    onChange={(e) => onUpdateLayout({ showHeader: e.target.checked })}
+                    className="accent-amber-600 rounded"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between text-xs py-1">
+                  <span className="font-medium text-stone-700">Show Footer</span>
+                  <input
+                    type="checkbox"
+                    checked={score.layoutSettings.showFooter ?? true}
+                    onChange={(e) => onUpdateLayout({ showFooter: e.target.checked })}
+                    className="accent-amber-600 rounded"
+                  />
+                </div>
+
+                {(score.layoutSettings.showFooter ?? true) && (
+                  <div className="space-y-1.5 pt-1">
+                    <div>
+                      <label className="text-[10px] text-stone-500 block mb-0.5 font-medium">
+                        Footer Text
+                      </label>
+                      <input
+                        type="text"
+                        value={score.layoutSettings.footerCustomText !== undefined ? score.layoutSettings.footerCustomText : (score.metadata.copyright || '© Pianotastic Academy')}
+                        onChange={(e) => onUpdateLayout({ footerCustomText: e.target.value })}
+                        className="w-full bg-white border border-stone-300 rounded px-2 py-1 text-xs text-stone-800"
+                        placeholder="© Pianotastic Academy"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] text-stone-500 block mb-0.5 font-medium">
+                        Page Numbers
+                      </label>
+                      <select
+                        value={score.layoutSettings.footerPageNumbering === 'none' ? 'none' : 'simple'}
+                        onChange={(e) => onUpdateLayout({ footerPageNumbering: e.target.value as 'simple' | 'none' })}
+                        className="w-full bg-white border border-stone-300 rounded px-2 py-1 text-xs text-stone-800"
+                      >
+                        <option value="simple">Simple (1, 2, 3...)</option>
+                        <option value="none">None</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Reset Layout */}

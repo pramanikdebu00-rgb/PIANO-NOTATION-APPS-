@@ -19,7 +19,11 @@ export const BeatValueBar: React.FC<BeatValueBarProps> = ({
   const currentMeasureId = selection.measureId || score.measures[0]?.id;
   const measureIdx = Math.max(0, score.measures.findIndex((m) => m.id === currentMeasureId));
   const currentMeasure = score.measures[measureIdx] || score.measures[0];
-  const totalBeats = getMeasureTotalBeats(currentMeasure, score.metadata.initialTimeSignature);
+  const totalBeats = getMeasureTotalBeats(
+    currentMeasure,
+    score.metadata.initialTimeSignature,
+    score.metadata.indianTaal
+  );
   const currentBeatIndex = selection.beatIndex !== undefined ? selection.beatIndex : 0;
   const effectiveValue = getEffectiveBeatValue(score, measureIdx, currentBeatIndex);
   const currentBarsPerLine = score.layoutSettings.barsPerLine || score.layoutSettings.measuresPerSystemAuto || 4;
@@ -77,6 +81,7 @@ export const BeatValueBar: React.FC<BeatValueBarProps> = ({
                 key={opt.value}
                 type="button"
                 onClick={() => onChangeBeatValue(opt.value)}
+                title={`Note Value ${opt.value} per beat (Shortcut: ${opt.value} or F${opt.value})`}
                 className={`w-full flex items-center justify-between p-2 rounded-lg border transition-all text-left ${
                   isSelected
                     ? 'bg-amber-600 text-white border-amber-600 shadow-xs ring-1 ring-amber-600'
@@ -92,7 +97,12 @@ export const BeatValueBar: React.FC<BeatValueBarProps> = ({
                     {opt.value}
                   </div>
                   <div>
-                    <div className="font-bold text-xs leading-none">{opt.label}</div>
+                    <div className="font-bold text-xs leading-none flex items-center gap-1.5">
+                      <span>{opt.label}</span>
+                      <span className={`text-[9px] font-mono px-1 py-0.5 rounded ${isSelected ? 'bg-amber-700/60 text-amber-100' : 'bg-stone-100 text-stone-500'}`}>
+                        {opt.value} / F{opt.value}
+                      </span>
+                    </div>
                     <div
                       className={`text-[10px] mt-0.5 leading-none ${
                         isSelected ? 'text-amber-100' : 'text-stone-400'
@@ -155,19 +165,27 @@ export const BeatValueBar: React.FC<BeatValueBarProps> = ({
       {/* Quick Notation Guide */}
       <div className="space-y-1.5 pt-2 border-t border-stone-200 text-[10px] text-stone-500">
         <div className="font-bold text-stone-700 uppercase tracking-wider text-[9px]">
-          Shortcuts
+          Key Shortcuts
         </div>
         <div className="flex justify-between py-0.5">
-          <span>Piano Keys / A–K:</span>
-          <span className="font-mono font-semibold text-stone-700">Enter Note</span>
+          <span>Note Entry:</span>
+          <span className="font-mono font-semibold text-stone-700">C D E F G A B</span>
         </div>
         <div className="flex justify-between py-0.5">
-          <span>Backspace / Del:</span>
-          <span className="font-mono font-semibold text-stone-700">Clear Beat (—)</span>
+          <span>Chord Symbol:</span>
+          <span className="font-mono font-semibold text-stone-700">Shift + C</span>
         </div>
         <div className="flex justify-between py-0.5">
-          <span>Double-click beat:</span>
-          <span className="font-mono font-semibold text-stone-700">Add Lyric</span>
+          <span>Values (1–4):</span>
+          <span className="font-mono font-semibold text-stone-700">1–4 or F1–F4</span>
+        </div>
+        <div className="flex justify-between py-0.5">
+          <span>Space Tool:</span>
+          <span className="font-mono font-semibold text-stone-700">Shift+Enter / ↕</span>
+        </div>
+        <div className="flex justify-between py-0.5">
+          <span>Clear / Delete:</span>
+          <span className="font-mono font-semibold text-stone-700">Backspace / Del</span>
         </div>
       </div>
     </div>

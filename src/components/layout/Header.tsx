@@ -36,6 +36,7 @@ import {
 } from 'lucide-react';
 import { ExportService } from '../../services/exportService';
 import { CloudSyncStatusIndicator, CloudSyncState } from './CloudSyncStatusIndicator';
+import { modifierKeyName, redoShortcutLabel } from '../../services/shortcutManager';
 
 interface HeaderProps {
   score: Score;
@@ -47,7 +48,7 @@ interface HeaderProps {
   onCopy?: () => void;
   onPaste?: () => void;
   hasClipboardContent?: boolean;
-  currentUser?: { email?: string | null; uid: string } | null;
+  currentUser?: { email?: string | null; uid: string; photoURL?: string | null; displayName?: string | null } | null;
   onOpenAuthModal?: () => void;
   cloudSyncStatus?: CloudSyncState;
   lastSavedAt?: Date | null;
@@ -303,7 +304,7 @@ export const Header: React.FC<HeaderProps> = ({
                     <Plus className="w-3.5 h-3.5 text-stone-600" />
                     <span>New Project</span>
                   </div>
-                  <span className="text-[10px] text-stone-400 font-mono">Ctrl+N</span>
+                  <span className="text-[10px] text-stone-400 font-mono">{modifierKeyName}+N</span>
                 </button>
                 <button
                   id="header-open-project-btn"
@@ -321,7 +322,7 @@ export const Header: React.FC<HeaderProps> = ({
                     <Upload className="w-3.5 h-3.5 text-stone-600" />
                     <span>Open Project...</span>
                   </div>
-                  <span className="text-[10px] text-stone-400 font-mono">Ctrl+O</span>
+                  <span className="text-[10px] text-stone-400 font-mono">{modifierKeyName}+O</span>
                 </button>
                 <button
                   id="header-save-project-btn"
@@ -335,7 +336,7 @@ export const Header: React.FC<HeaderProps> = ({
                     <Save className="w-3.5 h-3.5 text-stone-600" />
                     <span>Save Project</span>
                   </div>
-                  <span className="text-[10px] text-stone-400 font-mono">Ctrl+S</span>
+                  <span className="text-[10px] text-stone-400 font-mono">{modifierKeyName}+S</span>
                 </button>
                 <button
                   id="header-save-as-btn"
@@ -349,7 +350,7 @@ export const Header: React.FC<HeaderProps> = ({
                     <Download className="w-3.5 h-3.5 text-stone-600" />
                     <span>Save As...</span>
                   </div>
-                  <span className="text-[10px] text-stone-400 font-mono">Ctrl+Shift+S</span>
+                  <span className="text-[10px] text-stone-400 font-mono">{modifierKeyName}+Shift+S</span>
                 </button>
                 <button
                   id="header-print-studio-btn"
@@ -365,7 +366,7 @@ export const Header: React.FC<HeaderProps> = ({
                     <Printer className="w-3.5 h-3.5 text-stone-600" />
                     <span>Print</span>
                   </div>
-                  <span className="text-[10px] text-stone-400 font-mono">Ctrl+P</span>
+                  <span className="text-[10px] text-stone-400 font-mono">{modifierKeyName}+P</span>
                 </button>
                 <button
                   id="header-song-properties-btn"
@@ -520,7 +521,7 @@ export const Header: React.FC<HeaderProps> = ({
                   className="w-full px-3 py-1.5 text-left hover:bg-stone-50 flex items-center justify-between disabled:opacity-40"
                 >
                   <span>Undo</span>
-                  <span className="text-[10px] text-stone-600">Ctrl+Z</span>
+                  <span className="text-[10px] text-stone-600">{modifierKeyName}+Z</span>
                 </button>
                 <button
                   onClick={() => {
@@ -531,7 +532,7 @@ export const Header: React.FC<HeaderProps> = ({
                   className="w-full px-3 py-1.5 text-left hover:bg-stone-50 flex items-center justify-between disabled:opacity-40"
                 >
                   <span>Redo</span>
-                  <span className="text-[10px] text-stone-600">Ctrl+Y</span>
+                  <span className="text-[10px] text-stone-600">{redoShortcutLabel}</span>
                 </button>
                 <div className="my-1 border-t border-stone-100" />
                 <button
@@ -545,7 +546,7 @@ export const Header: React.FC<HeaderProps> = ({
                     <Scissors className="w-3.5 h-3.5 text-stone-500" />
                     <span>Cut</span>
                   </div>
-                  <span className="text-[10px] text-stone-400 font-mono">Ctrl+X</span>
+                  <span className="text-[10px] text-stone-400 font-mono">{modifierKeyName}+X</span>
                 </button>
                 <button
                   onClick={() => {
@@ -558,7 +559,7 @@ export const Header: React.FC<HeaderProps> = ({
                     <Copy className="w-3.5 h-3.5 text-stone-500" />
                     <span>Copy</span>
                   </div>
-                  <span className="text-[10px] text-stone-400 font-mono">Ctrl+C</span>
+                  <span className="text-[10px] text-stone-400 font-mono">{modifierKeyName}+C</span>
                 </button>
                 <button
                   onClick={() => {
@@ -572,7 +573,7 @@ export const Header: React.FC<HeaderProps> = ({
                     <ClipboardPaste className="w-3.5 h-3.5 text-stone-500" />
                     <span>Paste</span>
                   </div>
-                  <span className="text-[10px] text-stone-400 font-mono">Ctrl+V</span>
+                  <span className="text-[10px] text-stone-400 font-mono">{modifierKeyName}+V</span>
                 </button>
                 <div className="my-1 border-t border-stone-100" />
                 <button
@@ -1011,7 +1012,7 @@ export const Header: React.FC<HeaderProps> = ({
             id="undo-btn"
             onClick={onUndo}
             disabled={!canUndo}
-            title="Undo (Ctrl+Z)"
+            title={`Undo (${modifierKeyName}+Z)`}
             className="p-1.5 rounded-md hover:bg-white text-stone-700 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
           >
             <Undo2 className="w-3.5 h-3.5" />
@@ -1020,7 +1021,7 @@ export const Header: React.FC<HeaderProps> = ({
             id="redo-btn"
             onClick={onRedo}
             disabled={!canRedo}
-            title="Redo (Ctrl+Y)"
+            title={`Redo (${redoShortcutLabel})`}
             className="p-1.5 rounded-md hover:bg-white text-stone-700 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
           >
             <Redo2 className="w-3.5 h-3.5" />
@@ -1137,22 +1138,43 @@ export const Header: React.FC<HeaderProps> = ({
           />
         )}
 
-        {/* Cloud Sync & Account Button */}
+        {/* Cloud Sync & Account Workspace Profile / Avatar */}
         {onOpenAuthModal && (
           <button
             id="header-cloud-sync-btn"
             onClick={onOpenAuthModal}
             className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors shadow-2xs ${
               currentUser
-                ? 'bg-amber-50 border-amber-300 text-amber-950 hover:bg-amber-100 font-semibold'
+                ? 'bg-amber-50/80 border-amber-300 text-stone-900 hover:bg-amber-100 font-medium'
                 : 'bg-white border-stone-300 text-stone-700 hover:bg-stone-50'
             }`}
-            title={currentUser ? `Connected as ${currentUser.email}. Click for Cloud Sync options` : 'Sign in to sync projects to cloud'}
+            title={currentUser ? `Signed in as ${currentUser.email || 'Google Account'} (Cloud Sync Active)` : 'Sign in to sync projects to cloud'}
           >
-            <Cloud className={`w-3.5 h-3.5 ${currentUser ? 'text-amber-600' : 'text-stone-500'}`} />
-            <span className="truncate max-w-[95px]">
-              {currentUser ? (currentUser.email?.split('@')[0] || 'Cloud Sync') : 'Cloud Sync'}
-            </span>
+            {currentUser ? (
+              <>
+                {currentUser.photoURL ? (
+                  <img
+                    src={currentUser.photoURL}
+                    alt={currentUser.email || 'User Avatar'}
+                    className="w-4 h-4 rounded-full object-cover border border-amber-400"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <div className="w-4 h-4 rounded-full bg-amber-600 text-white flex items-center justify-center text-[10px] font-bold">
+                    {currentUser.email ? currentUser.email[0].toUpperCase() : 'G'}
+                  </div>
+                )}
+                <span className="truncate max-w-[130px] font-semibold text-amber-950">
+                  {currentUser.email || 'Google Account'}
+                </span>
+                <Cloud className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+              </>
+            ) : (
+              <>
+                <Cloud className="w-3.5 h-3.5 text-stone-500" />
+                <span>Cloud Sync</span>
+              </>
+            )}
           </button>
         )}
       </div>

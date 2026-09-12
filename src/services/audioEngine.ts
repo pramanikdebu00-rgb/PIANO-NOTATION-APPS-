@@ -1,7 +1,7 @@
 import { NoteEvent, Pitch, Measure, Score, TempoBeatUnit, TimeSignature } from '../types/score';
 import { getMidiNote, midiToFrequency, getEventBeats, parseChordToMidiNotes } from '../utils/musicTheory';
 import { calculatePlaybackRoute, PlaybackStep } from '../utils/navigationEngine';
-import { getEffectiveBeatValue } from '../utils/pianotasticNotation';
+import { getEffectiveBeatValue, getMeasureTotalBeats } from '../utils/pianotasticNotation';
 
 class AudioEngine {
   private ctx: AudioContext | null = null;
@@ -316,7 +316,8 @@ class AudioEngine {
     const quarterNoteSec = this.getQuarterNoteSec(bpm, beatUnit);
 
     const ts = measure.timeSignature || currentStep.timeSignature || this.currentScore.metadata.initialTimeSignature || { numerator: 4, denominator: 4 };
-    const measureCapacityBeats = (ts.numerator * 4) / ts.denominator;
+    const totalBeats = getMeasureTotalBeats(measure, ts, this.currentScore.metadata.indianTaal);
+    const measureCapacityBeats = (totalBeats * 4) / ts.denominator;
     const measureDurationSec = measureCapacityBeats * quarterNoteSec;
     const beatDurationSec = (4 / ts.denominator) * quarterNoteSec;
 
@@ -325,7 +326,7 @@ class AudioEngine {
     let startOffsetSec = 0;
 
     if (this.isFirstMeasureOfPlayback) {
-      startBeat = Math.min(ts.numerator - 1, this.initialStartBeatIndex);
+      startBeat = Math.min(totalBeats - 1, this.initialStartBeatIndex);
       const effVal = measure.beatValues?.[startBeat] || getEffectiveBeatValue(this.currentScore, currentStep.measureIndex, startBeat);
       startSub = Math.min(Math.max(0, effVal - 1), this.initialStartSubBeatIndex);
       const subDurationSec = beatDurationSec / effVal;
@@ -339,7 +340,7 @@ class AudioEngine {
     this.onPositionUpdate?.(currentStep.measureIndex, startBeat, this.currentRouteIndex);
 
     // Schedule metronome clicks for this measure respecting startBeat
-    for (let beat = startBeat; beat < ts.numerator; beat++) {
+    for (let beat = startBeat; beat < totalBeats; beat++) {
       const beatOffsetSec = beat * beatDurationSec - startOffsetSec;
       if (beatOffsetSec >= -0.001) {
         this.playClick(beat === 0, Math.max(0, beatOffsetSec));
@@ -418,7 +419,7 @@ class AudioEngine {
     const pickupBeat = this.currentScore?.metadata?.pickupBeat || 1;
     const isFirstMeasure = measure.measureNumber === 1 || measureIndex === 0;
     const lockedBeforeBeat = isFirstMeasure && pickupBeat > 1 ? pickupBeat - 1 : 0;
-    const totalBeats = ts.numerator;
+    const totalBeats = getMeasureTotalBeats(measure, ts, this.currentScore?.metadata?.indianTaal);
     const beatDurationSec = (4 / ts.denominator) * quarterNoteSec;
 
     for (let b = Math.max(startBeat, 0); b < totalBeats; b++) {
@@ -478,7 +479,7 @@ class AudioEngine {
     const pickupBeat = this.currentScore?.metadata?.pickupBeat || 1;
     const isFirstMeasure = measure.measureNumber === 1 || measureIndex === 0;
     const lockedBeforeBeat = isFirstMeasure && pickupBeat > 1 ? pickupBeat - 1 : 0;
-    const totalBeats = ts.numerator;
+    const totalBeats = getMeasureTotalBeats(measure, ts, this.currentScore?.metadata?.indianTaal);
     const beatDurationSec = (4 / ts.denominator) * quarterNoteSec;
 
     for (let b = Math.max(startBeat, 0); b < totalBeats; b++) {

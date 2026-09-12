@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Score, SavedProject } from '../../types/score';
 import { ProjectStorageService } from '../../services/projectStorageService';
 import { ScoreMiniaturePreview } from './ScoreMiniaturePreview';
+import { ConfirmDeleteModal } from '../modals/ConfirmDeleteModal';
 import {
   Plus,
   FileMusic,
@@ -28,7 +29,7 @@ interface HomeScreenProps {
   onOpenNewPage?: () => void;
   onDeleteProject: (projectId: string) => void;
   onImportFile?: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  currentUser?: { email?: string | null; uid: string } | null;
+  currentUser?: { email?: string | null; uid: string; photoURL?: string | null; displayName?: string | null } | null;
   onOpenAuthModal?: () => void;
   onSyncCloud?: () => void;
   isSyncing?: boolean;
@@ -48,6 +49,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   isSyncing = false,
 }) => {
   const [hoveredProjectId, setHoveredProjectId] = useState<string | null>(null);
+  const [projectToDelete, setProjectToDelete] = useState<SavedProject | null>(null);
 
   const handleOpenScore = (project: SavedProject) => {
     if (typeof onOpenProject === 'function') {
@@ -118,16 +120,35 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               onClick={onOpenAuthModal}
               className={`px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center space-x-1.5 transition-colors shadow-2xs ${
                 currentUser
-                  ? 'bg-amber-50 border-amber-300 text-amber-950 hover:bg-amber-100'
+                  ? 'bg-amber-50/90 border-amber-300 text-stone-900 hover:bg-amber-100'
                   : 'border-stone-300 bg-white hover:bg-stone-50 text-stone-700'
               }`}
             >
-              <Cloud className={`w-3.5 h-3.5 ${currentUser ? 'text-amber-600' : 'text-stone-500'}`} />
-              <span>
-                {currentUser
-                  ? `${currentUser.email?.split('@')[0]} (Cloud Synced)`
-                  : 'Cloud Sync'}
-              </span>
+              {currentUser ? (
+                <>
+                  {currentUser.photoURL ? (
+                    <img
+                      src={currentUser.photoURL}
+                      alt={currentUser.email || 'User Avatar'}
+                      className="w-4 h-4 rounded-full object-cover border border-amber-400"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <div className="w-4 h-4 rounded-full bg-amber-600 text-white flex items-center justify-center text-[10px] font-bold">
+                      {currentUser.email ? currentUser.email[0].toUpperCase() : 'G'}
+                    </div>
+                  )}
+                  <span className="truncate max-w-[140px] text-amber-950">
+                    {currentUser.email || 'Google Account'}
+                  </span>
+                  <Cloud className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                </>
+              ) : (
+                <>
+                  <Cloud className="w-3.5 h-3.5 text-stone-500" />
+                  <span>Cloud Sync</span>
+                </>
+              )}
             </button>
           )}
 
@@ -302,14 +323,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                       </span>
 
                       <button
-                        title="Delete project"
+                        id={`delete-project-btn-${project.id}`}
+                        type="button"
+                        title={`Delete "${project.name}"`}
+                        aria-label={`Delete project ${project.name}`}
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (confirm(`Are you sure you want to delete "${project.name}"?`)) {
-                            onDeleteProject(project.id);
-                          }
+                          setProjectToDelete(project);
                         }}
-                        className="p-1 rounded text-stone-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                        className="p-1.5 rounded-lg text-stone-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -321,6 +343,20 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           )}
         </section>
       </main>
+
+      {/* Confirmation Modal for Project Deletion */}
+      <ConfirmDeleteModal
+        isOpen={Boolean(projectToDelete)}
+        itemName={projectToDelete?.name || 'Untitled Project'}
+        itemType="project"
+        onConfirm={() => {
+          if (projectToDelete) {
+            onDeleteProject(projectToDelete.id);
+            setProjectToDelete(null);
+          }
+        }}
+        onCancel={() => setProjectToDelete(null)}
+      />
 
       {/* Footer */}
       <footer className="bg-white border-t border-stone-200/80 py-4 px-6 text-center text-xs text-stone-500">

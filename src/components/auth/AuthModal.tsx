@@ -39,7 +39,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onProjectsSynced,
 }) => {
   const [tab, setTab] = useState<'signin' | 'signup'>('signin');
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState('somenathmondal143@gmail.com');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -234,12 +234,27 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           ) : (
             /* Signed Out State: Sign In or Sign Up */
             <div className="space-y-4">
-              {/* Google Sign In Quick Button */}
+              {/* Account Intended Information Box */}
+              <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-xl space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-amber-900">Authoritative Cloud Account</span>
+                  <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-100/80 px-1.5 py-0.5 rounded">
+                    Safari & Chrome Sync
+                  </span>
+                </div>
+                <p className="text-xs font-semibold text-stone-900">somenathmondal143@gmail.com</p>
+                <p className="text-[11px] text-stone-600">
+                  Connect using Google Sign-In to sync your sheet music scores between Safari, Chrome, and all devices.
+                </p>
+              </div>
+
+              {/* Google Sign In Primary Button */}
               <button
                 type="button"
+                id="google-signin-btn"
                 onClick={handleGoogleSignIn}
                 disabled={loading}
-                className="w-full py-2.5 px-4 rounded-xl border border-stone-300 hover:bg-stone-50 font-medium text-xs text-stone-800 flex items-center justify-center space-x-2.5 transition-colors shadow-2xs"
+                className="w-full py-2.5 px-4 rounded-xl border border-stone-300 hover:bg-stone-50 font-medium text-xs text-stone-900 flex items-center justify-center space-x-2.5 transition-colors shadow-2xs bg-white hover:border-stone-400"
               >
                 <svg className="w-4 h-4" viewBox="0 0 24 24">
                   <path
@@ -259,7 +274,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
                   />
                 </svg>
-                <span>Continue with Google</span>
+                <span>Continue with Google Sign-In</span>
               </button>
 
               <div className="flex items-center space-x-2 my-2">

@@ -1,6 +1,4 @@
 import { jsPDF } from 'jspdf';
-import { svg2pdf } from 'svg2pdf.js';
-import html2canvas from 'html2canvas-pro';
 import {
   Score,
   Measure,
@@ -18,6 +16,381 @@ import {
 } from '../types/score';
 import { getMidiNote, KEY_SIGNATURES, getEventBeats } from '../utils/musicTheory';
 import { calculatePlaybackRoute } from '../utils/navigationEngine';
+import {
+  buildPrintableScoreDocument,
+  PrintableScoreDocument,
+  PrintableDocumentOptions,
+} from './printableScoreDocument';
+
+/**
+ * Draw crisp vector sharp (♯) with line primitives to guarantee high-DPI vector PDF quality
+ */
+function drawVectorSharp(pdf: jsPDF, x: number, y: number, size: number) {
+  pdf.setDrawColor(15, 23, 42);
+  pdf.setLineWidth(0.65);
+  pdf.line(x, y - size * 0.45, x, y + size * 0.35);
+  pdf.line(x + size * 0.28, y - size * 0.35, x + size * 0.28, y + size * 0.45);
+  pdf.setLineWidth(1.05);
+  pdf.line(x - size * 0.1, y - size * 0.08, x + size * 0.38, y - size * 0.22);
+  pdf.line(x - size * 0.1, y + size * 0.22, x + size * 0.38, y + size * 0.08);
+}
+
+/**
+ * Draw crisp vector flat (♭) with line and curve primitives
+ */
+function drawVectorFlat(pdf: jsPDF, x: number, y: number, size: number) {
+  pdf.setDrawColor(15, 23, 42);
+  pdf.setLineWidth(0.75);
+  pdf.line(x, y - size * 0.55, x, y + size * 0.25);
+  pdf.lines(
+    [
+      [size * 0.28, -size * 0.05],
+      [0, -size * 0.25],
+      [-size * 0.28, -size * 0.05],
+    ],
+    x,
+    y + size * 0.25,
+    [1, 1],
+    'S',
+    true
+  );
+}
+
+/**
+ * Draw crisp vector natural (♮) with line primitives
+ */
+function drawVectorNatural(pdf: jsPDF, x: number, y: number, size: number) {
+  pdf.setDrawColor(15, 23, 42);
+  pdf.setLineWidth(0.7);
+  pdf.line(x, y - size * 0.55, x, y + size * 0.15);
+  pdf.line(x + size * 0.28, y - size * 0.3, x + size * 0.28, y + size * 0.4);
+  pdf.setLineWidth(0.95);
+  pdf.line(x, y - size * 0.3, x + size * 0.28, y - size * 0.3);
+  pdf.line(x, y + size * 0.15, x + size * 0.28, y + size * 0.15);
+}
+
+/**
+ * Draw crisp vector tie / undertie (⌣) curve
+ */
+function drawVectorTie(pdf: jsPDF, x: number, y: number, width: number) {
+  pdf.setDrawColor(107, 33, 168); // #6b21a8
+  pdf.setLineWidth(1.2);
+  const halfW = width / 2;
+  pdf.lines([[halfW * 0.6, 3.5], [halfW * 0.8, -3.5]], x - halfW, y, [1, 1], 'S');
+}
+
+/**
+ * Draw vector quarter note symbol (♩) for tempo marking
+ */
+function drawQuarterNoteSymbol(pdf: jsPDF, x: number, y: number, _size: number) {
+  pdf.setFillColor(15, 23, 42);
+  pdf.circle(x + 2, y + 2, 2.5, 'F');
+  pdf.setDrawColor(15, 23, 42);
+  pdf.setLineWidth(0.9);
+  pdf.line(x + 4.2, y + 2, x + 4.2, y - 6);
+}
+
+/**
+ * Render canonical PrintableScoreDocument directly into a vector jsPDF instance.
+ * Guarantees 100% visual and data fidelity with Print Preview.
+ */
+function renderCanonicalDocumentToPdf(
+  doc: PrintableScoreDocument,
+  targetPageIndices?: number[],
+  _mode: 'professional' | 'practice_sheet' = 'professional'
+): jsPDF {
+  const orientation = doc.orientation;
+  const scale = 0.75; // 96 DPI screen px to 72 DPI PDF pt
+  const pdfWidth = doc.pageWidth * scale;
+  const pdfHeight = doc.pageHeight * scale;
+
+  const pdf = new jsPDF({
+    orientation,
+    unit: 'pt',
+    format: [pdfWidth, pdfHeight],
+  });
+
+  const pagesToRender = doc.pages.filter(
+    (p) => !targetPageIndices || targetPageIndices.includes(p.pageIndex)
+  );
+
+  pagesToRender.forEach((page, pageIter) => {
+    if (pageIter > 0) {
+      pdf.addPage([pdfWidth, pdfHeight], orientation);
+    }
+
+    // 1. White Page Background
+    pdf.setFillColor(255, 255, 255);
+    pdf.rect(0, 0, pdfWidth, pdfHeight, 'F');
+
+    // 2. Score Header
+    if (page.showHeader) {
+      // Title
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(18);
+      pdf.setTextColor(15, 23, 42);
+      pdf.text(doc.title, pdfWidth / 2, 54 * scale, { align: 'center' });
+
+      // Subtitle
+      if (doc.subtitle) {
+        pdf.setFont('helvetica', 'italic');
+        pdf.setFontSize(9.5);
+        pdf.setTextColor(71, 85, 105);
+        pdf.text(doc.subtitle, pdfWidth / 2, 72 * scale, { align: 'center' });
+      }
+
+      // Tempo
+      const tempoY = 116 * scale;
+      const staffLeft = page.staffMarginLeft * scale;
+      drawQuarterNoteSymbol(pdf, staffLeft, tempoY - 2, 9 * scale);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(8.5);
+      pdf.setTextColor(30, 41, 59);
+      pdf.text(`= ${doc.tempoBpm}`, staffLeft + 10 * scale, tempoY);
+
+      // Time Signature & Indian Taal
+      // e.g. "Time Signature : 4/4 (Keharwa Taal)"
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(8.5);
+      pdf.setTextColor(71, 85, 105);
+      pdf.text(doc.timeSignatureFormatted, staffLeft, 132 * scale);
+
+      // Composer & Lyricist
+      const staffRight = (page.pageWidth - page.staffMarginRight) * scale;
+      if (doc.composer) {
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(9);
+        pdf.setTextColor(30, 41, 59);
+        pdf.text(doc.composer, staffRight, 116 * scale, { align: 'right' });
+      }
+      if (doc.lyricist) {
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(8);
+        pdf.setTextColor(100, 116, 139);
+        pdf.text(doc.lyricist, staffRight, 130 * scale, { align: 'right' });
+      }
+    } else if (page.pageIndex > 0) {
+      // Running Header on subsequent pages
+      const staffLeft = page.staffMarginLeft * scale;
+      const staffRight = (page.pageWidth - page.staffMarginRight) * scale;
+      const runY = 30 * scale;
+
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(8);
+      pdf.setTextColor(100, 116, 139);
+      pdf.text(doc.title, staffLeft, runY);
+      if (doc.composer) {
+        pdf.text(doc.composer, staffRight, runY, { align: 'right' });
+      }
+      pdf.setDrawColor(226, 232, 240);
+      pdf.setLineWidth(0.5);
+      pdf.line(staffLeft, 35 * scale, staffRight, 35 * scale);
+    }
+
+    // 3. Page Footer
+    // Strictly individual page number: "1", "2", "3" (never "1/2"!)
+    const footerY = (page.pageHeight - 24) * scale;
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(8);
+    pdf.setTextColor(100, 116, 139);
+    pdf.text(page.pageNumberLabel, pdfWidth / 2, footerY, { align: 'center' });
+
+    // Academy footer branding
+    const staffLeft = page.staffMarginLeft * scale;
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(7.5);
+    pdf.setTextColor(148, 163, 184);
+    pdf.text('Pianotastic Academy', staffLeft, footerY);
+
+    // 4. Systems & Measures
+    page.systems.forEach((sys) => {
+      sys.measures.forEach((m) => {
+        const mX = m.x * scale;
+        const mY = m.y * scale;
+        const mW = m.width * scale;
+        const mH = m.height * scale;
+
+        // Staff frame / measure outline
+        pdf.setDrawColor(203, 213, 225); // #cbd5e1
+        pdf.setLineWidth(0.65);
+        pdf.roundedRect(mX, mY, mW, mH, 2, 2, 'S');
+
+        // Measure Number
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(7.5);
+        pdf.setTextColor(100, 116, 139);
+        pdf.text(String(m.measureNumber), mX + 6 * scale, mY + 13 * scale);
+
+        // Voltas
+        if (m.voltas && m.voltas.length > 0) {
+          m.voltas.forEach((v) => {
+            const vY = (m.y - 10) * scale;
+            pdf.setDrawColor(15, 23, 42);
+            pdf.setLineWidth(0.75);
+            pdf.line(mX, vY, mX + mW, vY);
+            pdf.line(mX, vY, mX, vY + 8 * scale);
+            if (v.closedEnd !== false) {
+              pdf.line(mX + mW, vY, mX + mW, vY + 8 * scale);
+            }
+            pdf.setFont('helvetica', 'bold');
+            pdf.setFontSize(8);
+            pdf.setTextColor(15, 23, 42);
+            const label = v.text || (v.endingNumbers?.join(', ') ? `${v.endingNumbers.join(', ')}.` : '1.');
+            pdf.text(label, mX + 5 * scale, vY - 2 * scale);
+          });
+        }
+
+        // Barlines
+        if (m.hasDoubleBarline) {
+          // Double barline: two parallel vertical lines 3px apart
+          pdf.setDrawColor(15, 23, 42);
+          pdf.setLineWidth(1.1);
+          pdf.line(mX + mW - 3 * scale, mY, mX + mW - 3 * scale, mY + mH);
+          pdf.line(mX + mW, mY, mX + mW, mY + mH);
+        } else if (m.barlineType === 'repeat_end') {
+          pdf.setDrawColor(15, 23, 42);
+          pdf.setLineWidth(0.75);
+          pdf.line(mX + mW - 4 * scale, mY, mX + mW - 4 * scale, mY + mH);
+          pdf.setLineWidth(2.2);
+          pdf.line(mX + mW, mY, mX + mW, mY + mH);
+          // Repeat dots
+          pdf.setFillColor(15, 23, 42);
+          pdf.circle(mX + mW - 8 * scale, mY + mH * 0.45, 1.8 * scale, 'F');
+          pdf.circle(mX + mW - 8 * scale, mY + mH * 0.65, 1.8 * scale, 'F');
+        } else if (m.barlineType === 'repeat_start') {
+          pdf.setDrawColor(15, 23, 42);
+          pdf.setLineWidth(2.2);
+          pdf.line(mX, mY, mX, mY + mH);
+          pdf.setLineWidth(0.75);
+          pdf.line(mX + 4 * scale, mY, mX + 4 * scale, mY + mH);
+          // Repeat dots
+          pdf.setFillColor(15, 23, 42);
+          pdf.circle(mX + 8 * scale, mY + mH * 0.45, 1.8 * scale, 'F');
+          pdf.circle(mX + 8 * scale, mY + mH * 0.65, 1.8 * scale, 'F');
+        } else {
+          // Standard right barline
+          pdf.setDrawColor(203, 213, 225);
+          pdf.setLineWidth(0.75);
+          pdf.line(mX + mW, mY, mX + mW, mY + mH);
+        }
+
+        // Beats
+        m.beats.forEach((beat) => {
+          const bX = beat.colX * scale;
+          const bCenterX = beat.colCenterX * scale;
+
+          // Subtle column divider line
+          if (beat.beatIndex > 0) {
+            pdf.setDrawColor(241, 245, 249);
+            pdf.setLineWidth(0.5);
+            pdf.line(bX, mY + 18 * scale, bX, mY + mH - 18 * scale);
+          }
+
+          // Row 1: Chord
+          if (beat.chord) {
+            pdf.setFont('helvetica', 'bold');
+            pdf.setFontSize(9.5);
+            pdf.setTextColor(37, 99, 235); // #2563eb
+            pdf.text(beat.chord, bCenterX, mY + 36 * scale, { align: 'center' });
+          }
+
+          // Row 2: Beat Number / Matra
+          // For Keharwa: 1, 2, 3, 4, 5, 6, 7, 8 in ONE single measure!
+          // For Dadra: 1, 2, 3, 4, 5, 6 in ONE measure!
+          pdf.setFont('helvetica', 'bold');
+          pdf.setFontSize(8.5);
+          pdf.setTextColor(100, 116, 139); // #64748b
+          pdf.text(String(beat.beatNumber), bCenterX, mY + 54 * scale, { align: 'center' });
+
+          // Row 3: Notes
+          beat.notes.forEach((note) => {
+            const nX = note.x * scale;
+            const nY = (m.y + 84) * scale;
+
+            if (note.isEmpty) {
+              pdf.setFont('helvetica', 'bold');
+              pdf.setFontSize(13);
+              pdf.setTextColor(148, 163, 184);
+              const emptyChar = note.isRestDot ? '•' : note.subBeatCount > 1 ? '•' : '—';
+              pdf.text(emptyChar, nX, nY, { align: 'center' });
+            } else {
+              pdf.setFont('helvetica', 'bold');
+              const fontSize = note.subBeatCount > 2 ? 10 : note.subBeatCount === 2 ? 12 : 13.5;
+              pdf.setFontSize(fontSize);
+              pdf.setTextColor(15, 23, 42);
+
+              const letterStr = note.step || '';
+              const letterWidth = pdf.getStringUnitWidth(letterStr) * fontSize;
+
+              const hasAcc = Boolean(note.accidental && note.accidental !== 'natural');
+              const accWidth = hasAcc ? 6.5 * scale : 0;
+              const octaveDigit = String(note.displayOctave);
+              const octaveFontSize = Math.round(fontSize * 0.65);
+              const octaveWidth = pdf.getStringUnitWidth(octaveDigit) * octaveFontSize;
+
+              const totalClusterWidth = letterWidth + accWidth + octaveWidth;
+              const clusterStartX = nX - totalClusterWidth / 2;
+
+              // Note letter
+              pdf.text(letterStr, clusterStartX + letterWidth / 2, nY, { align: 'center' });
+
+              // Accidental vector glyph (♯, ♭, ♮)
+              let currentX = clusterStartX + letterWidth;
+              if (hasAcc) {
+                const accX = currentX + 1.5 * scale;
+                const accY = nY - 3 * scale;
+                if (note.accidental === 'sharp') {
+                  drawVectorSharp(pdf, accX, accY, fontSize * 0.75);
+                } else if (note.accidental === 'flat') {
+                  drawVectorFlat(pdf, accX, accY, fontSize * 0.75);
+                } else if (note.accidental === 'natural') {
+                  drawVectorNatural(pdf, accX, accY, fontSize * 0.75);
+                }
+                currentX += accWidth;
+              }
+
+              // Superscript Octave number: standard ASCII digit, raised Y position
+              pdf.setFont('helvetica', 'bold');
+              pdf.setFontSize(octaveFontSize);
+              pdf.setTextColor(30, 41, 59);
+              pdf.text(octaveDigit, currentX + octaveWidth / 2, nY - 5 * scale, { align: 'center' });
+            }
+          });
+
+          // Row 4: Symbols (e.g. ⌣)
+          beat.symbols.forEach((sym) => {
+            if (sym === '⌣' || sym.includes('⌣')) {
+              drawVectorTie(pdf, bCenterX, (m.y + 104) * scale, 14 * scale);
+            } else if (sym && sym.trim()) {
+              pdf.setFont('helvetica', 'bold');
+              pdf.setFontSize(10.5);
+              pdf.setTextColor(107, 33, 168);
+              pdf.text(sym.trim(), bCenterX, (m.y + 106) * scale, { align: 'center' });
+            }
+          });
+
+          // Row 5: Lyrics
+          beat.lyrics.forEach((lyric) => {
+            pdf.setFont('helvetica', 'normal');
+            pdf.setFontSize(8);
+            pdf.setTextColor(30, 41, 59);
+            pdf.text(lyric.text, lyric.x * scale, (m.y + 124) * scale, { align: 'center' });
+          });
+        });
+      });
+    });
+
+    // 5. Free-Position Text Objects
+    page.textObjects.forEach((t) => {
+      pdf.setFont('helvetica', t.fontWeight === 'bold' ? 'bold' : 'normal');
+      pdf.setFontSize(Math.max(6, t.fontSize * 0.75));
+      pdf.setTextColor(30, 41, 59);
+      pdf.text(t.text, t.x * scale, t.y * scale);
+    });
+  });
+
+  return pdf;
+}
 
 export class ExportService {
   /**
@@ -123,101 +496,62 @@ export class ExportService {
   }
 
   /**
-   * Export high-resolution vector PDF in either:
-   * 1. 'professional' mode: pristine, clean engraving with no educational clutter
-   * 2. 'practice_sheet' mode: full educational layer (RH/LH labels, fingerings, solfege, practice goals)
+   * Export high-resolution vector PDF using the canonical PrintableScoreDocument.
+   * Consumes the exact same structured data, coordinates, typography, barlines,
+   * accidentals, and octave superscripts as Print Preview.
    */
   public static async exportPDF(
     score: Score,
     mode: 'professional' | 'practice_sheet' = 'professional',
-    filename?: string
+    filename?: string,
+    options?: PrintableDocumentOptions,
+    targetPageIndices?: number[]
   ) {
-    const orientation = score.layoutSettings.orientation === 'landscape' ? 'landscape' : 'portrait';
-    const isA4 = score.layoutSettings.pageSize !== 'Letter';
-    const format = isA4 ? 'a4' : 'letter';
-
-    const pdf = new jsPDF({
-      orientation,
-      unit: 'mm',
-      format,
-    });
-
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const pageHeight = pdf.internal.pageSize.getHeight();
-
-    // Query rendered score DOM pages (Pianotastic notation containers) or fallback SVGs
-    const pageElements = document.querySelectorAll<HTMLElement>('.score-page');
-
-    if (!pageElements || pageElements.length === 0) {
-      window.print();
-      return;
-    }
-
-    if (document.fonts?.ready) {
-      await document.fonts.ready;
-    }
-
-    for (let i = 0; i < pageElements.length; i++) {
-      if (i > 0) {
-        pdf.addPage(format, orientation);
-      }
-
-      const pageEl = pageElements[i];
-      const svgEl = pageEl.querySelector('svg');
-
-      if (svgEl) {
-        try {
-          // Clone the SVG DOM node to prevent modifying live UI
-          const clonedSvg = svgEl.cloneNode(true) as SVGElement;
-
-          // If professional engraving mode, remove learning layer elements
-          if (mode === 'professional') {
-            clonedSvg.querySelectorAll('.pianotastic-learning-layer').forEach((el) => el.remove());
-          }
-
-          // True vector PDF rendering: converts SVG paths, text, strokes, and glyphs directly into vector PDF objects
-          await svg2pdf(clonedSvg, pdf, {
-            x: 0,
-            y: 0,
-            width: pageWidth,
-            height: pageHeight,
-          });
-        } catch (vectorErr) {
-          console.warn('Vector PDF conversion fallback for page ' + (i + 1), vectorErr);
-          // Fallback if browser security sandbox blocks inline SVG serialization
-          try {
-            const canvas = await html2canvas(pageEl, {
-              scale: 3.5, // 400+ DPI fallback
-              useCORS: true,
-              backgroundColor: '#ffffff',
-              logging: false,
-            });
-            const imgData = canvas.toDataURL('image/png', 1.0);
-            pdf.addImage(imgData, 'PNG', 0, 0, pageWidth, pageHeight, undefined, 'FAST');
-          } catch (err) {
-            console.error('Failed to render page for PDF:', err);
-          }
-        }
-      }
-    }
+    const doc = buildPrintableScoreDocument(score, options);
+    const pdf = renderCanonicalDocumentToPdf(doc, targetPageIndices, mode);
 
     const modeSuffix = mode === 'practice_sheet' ? ' (Pianotastic Practice Sheet)' : ' (Professional Score)';
-    const cleanTitle = (filename || score.metadata.title || 'Score').replace(/[/\\?%*:|"<>]/g, '_');
+    const cleanTitle = (filename || doc.title || 'Score').replace(/[/\\?%*:|"<>]/g, '_');
+    pdf.save(`${cleanTitle}${modeSuffix}.pdf`);
+  }
+
+  /**
+   * Export already built canonical PrintableScoreDocument directly to PDF
+   */
+  public static async exportDocumentToPdf(
+    doc: PrintableScoreDocument,
+    filename?: string,
+    targetPageIndices?: number[],
+    mode: 'professional' | 'practice_sheet' = 'professional'
+  ) {
+    const pdf = renderCanonicalDocumentToPdf(doc, targetPageIndices, mode);
+    const modeSuffix = mode === 'practice_sheet' ? ' (Pianotastic Practice Sheet)' : ' (Professional Score)';
+    const cleanTitle = (filename || doc.title || 'Score').replace(/[/\\?%*:|"<>]/g, '_');
     pdf.save(`${cleanTitle}${modeSuffix}.pdf`);
   }
 
   /**
    * Convenience method: Export Professional Score PDF
    */
-  public static async exportProfessionalScorePDF(score: Score, filename?: string) {
-    return this.exportPDF(score, 'professional', filename);
+  public static async exportProfessionalScorePDF(
+    score: Score,
+    filename?: string,
+    options?: PrintableDocumentOptions,
+    targetPageIndices?: number[]
+  ) {
+    return this.exportPDF(score, 'professional', filename, options, targetPageIndices);
   }
 
   /**
    * Convenience method: Export Pianotastic Practice Sheet PDF
    */
-  public static async exportPracticeSheetPDF(score: Score, filename?: string) {
-    return this.exportPDF(score, 'practice_sheet', filename);
+  public static async exportPracticeSheetPDF(
+    score: Score,
+    filename?: string,
+    options?: PrintableDocumentOptions,
+    targetPageIndices?: number[]
+  ) {
+    return this.exportPDF(score, 'practice_sheet', filename, options, targetPageIndices);
   }
 
   /**

@@ -104,7 +104,7 @@ export const VirtualPiano: React.FC<VirtualPianoProps> = ({
     const label = np.acc ? `${np.step}#${octave}` : `${np.step}${octave}`;
     const displayOctave = getDisplayOctave(octave, keyboardSize);
     const displayLabel = np.acc
-      ? `${np.step}#${getSuperscriptOctave(displayOctave)}`
+      ? `${np.step}♯${getSuperscriptOctave(displayOctave)}`
       : `${np.step}${getSuperscriptOctave(displayOctave)}`;
 
     keys.push({

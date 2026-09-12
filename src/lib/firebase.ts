@@ -17,4 +17,8 @@ const databaseId = (firebaseConfig as { firestoreDatabaseId?: string }).firestor
 export const db: Firestore = databaseId ? getFirestore(app, databaseId) : getFirestore(app);
 
 export const googleProvider = new GoogleAuthProvider();
+googleProvider.setCustomParameters({
+  login_hint: 'somenathmondal143@gmail.com',
+  prompt: 'select_account',
+});
 export default app;

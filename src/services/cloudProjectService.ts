@@ -7,6 +7,7 @@ import {
   query,
   orderBy,
   getDocFromServer,
+  onSnapshot,
 } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { Score, SavedProject } from '../types/score';
@@ -109,6 +110,37 @@ export class CloudProjectService {
 
   public static async getUserProjects(userId: string): Promise<SavedProject[]> {
     return this.fetchUserProjects(userId);
+  }
+
+  /**
+   * Listen to real-time updates for user's projects across tabs and browsers (Safari <-> Chrome)
+   */
+  public static subscribeToUserProjects(
+    userId: string,
+    onProjectsUpdate: (projects: SavedProject[]) => void,
+    onError?: (error: any) => void
+  ): () => void {
+    if (!userId) return () => {};
+    const projectsColRef = collection(db, 'users', userId, 'projects');
+    return onSnapshot(
+      projectsColRef,
+      (snap) => {
+        const list: SavedProject[] = [];
+        snap.forEach((docSnap) => {
+          if (docSnap.id === '_ping') return;
+          const data = docSnap.data() as SavedProject;
+          if (data && data.score) {
+            list.push(data);
+          }
+        });
+        list.sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime());
+        onProjectsUpdate(list);
+      },
+      (error) => {
+        console.warn('Firestore subscription error:', error);
+        onError?.(error);
+      }
+    );
   }
 
   /**

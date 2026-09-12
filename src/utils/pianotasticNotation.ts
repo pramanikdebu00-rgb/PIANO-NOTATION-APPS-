@@ -109,17 +109,26 @@ export function formatNoteWithOctave(
  *   Time Signature : 4/4 (Western Standard) -> "Time Signature : 4/4"
  */
 export function formatTimeSignatureWithTaal(
-  timeSignature: TimeSignature,
+  timeSignature?: TimeSignature | string,
   indianTaal?: string
 ): string {
-  const num = timeSignature?.numerator || 4;
-  const den = timeSignature?.denominator || 4;
+  let num = 4;
+  let den = 4;
+  if (typeof timeSignature === 'string') {
+    const parts = timeSignature.split('/');
+    num = parseInt(parts[0], 10) || 4;
+    den = parseInt(parts[1], 10) || 4;
+  } else if (timeSignature) {
+    num = timeSignature.numerator || 4;
+    den = timeSignature.denominator || 4;
+  }
   const tsStr = `${num}/${den}`;
   if (!indianTaal || indianTaal === 'None') {
     return `Time Signature : ${tsStr}`;
   }
   const cleanTaal = indianTaal.replace(/\s*Taal\s*$/i, '').trim();
-  return `Time Signature : ${tsStr} (${cleanTaal} Taal)`;
+  const capitalizedTaal = cleanTaal ? cleanTaal.charAt(0).toUpperCase() + cleanTaal.slice(1) : '';
+  return `Time Signature : ${tsStr} (${capitalizedTaal} Taal)`;
 }
 
 /**
@@ -247,26 +256,52 @@ export function formatSubdivisionDisplay(pitch: Pitch | null | undefined): strin
  */
 export function getMeasureTotalBeats(
   measure: Measure | null | undefined,
-  defaultTs: TimeSignature,
+  defaultTs?: TimeSignature | string,
   indianTaal?: string
 ): number {
-  if (measure?.timeSignature?.numerator) {
-    return measure.timeSignature.numerator;
-  }
-  if (indianTaal && indianTaal !== 'None') {
-    const lower = indianTaal.toLowerCase();
+  const taal = indianTaal || (measure as any)?.indianTaal;
+  if (taal && taal !== 'None') {
+    const lower = taal.toLowerCase().trim();
     if (lower.includes('keharwa')) {
       return 8;
     }
     if (lower.includes('dadra')) {
       return 6;
     }
-    const foundTaal = INDIAN_TAALS.find((t) => t.id === indianTaal || t.name === indianTaal);
+    if (lower.includes('teentaal') || lower.includes('tintal')) {
+      return 16;
+    }
+    if (lower.includes('ektaal')) {
+      return 12;
+    }
+    if (lower.includes('jhaptal') || lower.includes('jhap')) {
+      return 10;
+    }
+    if (lower.includes('rupak')) {
+      return 7;
+    }
+    if (lower.includes('deepchandi')) {
+      return 14;
+    }
+    const matchNum = lower.match(/(\d+)\s*-?\s*matra/);
+    if (matchNum) {
+      return parseInt(matchNum[1], 10);
+    }
+    const foundTaal = INDIAN_TAALS.find(
+      (t) => t.id.toLowerCase() === lower || t.name.toLowerCase() === lower
+    );
     if (foundTaal && foundTaal.beats) {
       return foundTaal.beats;
     }
   }
-  return defaultTs?.numerator || 4;
+  if (measure?.timeSignature?.numerator) {
+    return measure.timeSignature.numerator;
+  }
+  if (typeof defaultTs === 'string') {
+    const num = parseInt(defaultTs.split('/')[0], 10);
+    if (!isNaN(num) && num > 0) return num;
+  }
+  return (defaultTs as TimeSignature)?.numerator || 4;
 }
 
 /**
@@ -296,7 +331,11 @@ export function getFirstEditablePosition(score: Score): {
   }
   const firstMeasure = score.measures[0];
   const pickupBeat = score.metadata.pickupBeat || 1;
-  const totalBeats = getMeasureTotalBeats(firstMeasure, score.metadata.initialTimeSignature);
+  const totalBeats = getMeasureTotalBeats(
+    firstMeasure,
+    score.metadata.initialTimeSignature,
+    score.metadata.indianTaal
+  );
   // pickupBeat is 1-based (e.g. 3 -> beatIndex 2)
   const initialBeatIndex = Math.min(totalBeats - 1, Math.max(0, pickupBeat - 1));
   return {
@@ -322,7 +361,11 @@ export function getEffectiveBeatValue(
   for (let mIdx = measureIndex; mIdx >= 0; mIdx--) {
     const measure = score.measures[mIdx];
     if (!measure) continue;
-    const totalBeats = getMeasureTotalBeats(measure, score.metadata.initialTimeSignature);
+    const totalBeats = getMeasureTotalBeats(
+      measure,
+      score.metadata.initialTimeSignature,
+      score.metadata.indianTaal
+    );
     const startBeat = mIdx === measureIndex ? beatIndex : totalBeats - 1;
 
     for (let b = startBeat; b >= 0; b--) {
@@ -394,9 +437,10 @@ export function getMeasureBeatPitches(
 export function syncMeasureEventsFromBeatData(
   measure: Measure,
   defaultTs: TimeSignature,
-  handTemplate: HandTemplate = 'Both'
+  handTemplate: HandTemplate = 'Both',
+  indianTaal?: string
 ): Measure {
-  const totalBeats = getMeasureTotalBeats(measure, defaultTs);
+  const totalBeats = getMeasureTotalBeats(measure, defaultTs, indianTaal);
   const rhEvents: NoteEvent[] = [];
   const lhEvents: NoteEvent[] = [];
 
@@ -544,7 +588,11 @@ export function calculateNextCursorPosition(
   // 2. Beat completed! Move to next beat
   const measureIdx = score.measures.findIndex((m) => m.id === currentMeasureId);
   const currentMeasure = score.measures[measureIdx] || score.measures[0];
-  const totalBeats = getMeasureTotalBeats(currentMeasure, score.metadata.initialTimeSignature);
+  const totalBeats = getMeasureTotalBeats(
+    currentMeasure,
+    score.metadata.initialTimeSignature,
+    score.metadata.indianTaal
+  );
 
   if (currentBeatIndex + 1 < totalBeats) {
     // Move to next beat in current measure

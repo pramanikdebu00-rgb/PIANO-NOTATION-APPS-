@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { SavedProject, Score } from '../../types/score';
+import { ConfirmDeleteModal } from './ConfirmDeleteModal';
 import {
   FolderOpen,
   X,
@@ -45,6 +46,7 @@ export const ProjectLibraryModal: React.FC<ProjectLibraryModalProps> = ({
   isSyncing = false,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [projectToDelete, setProjectToDelete] = useState<SavedProject | null>(null);
 
   if (!isOpen) return null;
 
@@ -221,14 +223,15 @@ export const ProjectLibraryModal: React.FC<ProjectLibraryModalProps> = ({
                       <Copy className="w-3.5 h-3.5" />
                     </button>
                     <button
-                      title="Delete project"
+                      id={`library-delete-project-btn-${p.id}`}
+                      type="button"
+                      title={`Delete "${p.name}"`}
+                      aria-label={`Delete project ${p.name}`}
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (window.confirm(`Delete "${p.name}"?`)) {
-                          onDeleteProject(p.id);
-                        }
+                        setProjectToDelete(p);
                       }}
-                      className="p-1.5 rounded-lg text-stone-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                      className="p-1.5 rounded-lg text-stone-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -260,6 +263,20 @@ export const ProjectLibraryModal: React.FC<ProjectLibraryModalProps> = ({
           </button>
         </div>
       </div>
+
+      {/* In-app confirmation dialog for deleting project */}
+      <ConfirmDeleteModal
+        isOpen={Boolean(projectToDelete)}
+        itemName={projectToDelete?.name || 'Untitled'}
+        itemType="project"
+        onConfirm={() => {
+          if (projectToDelete) {
+            onDeleteProject(projectToDelete.id);
+            setProjectToDelete(null);
+          }
+        }}
+        onCancel={() => setProjectToDelete(null)}
+      />
     </div>
   );
 };

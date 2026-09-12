@@ -1,5 +1,6 @@
 import React from 'react';
 import { X, Keyboard } from 'lucide-react';
+import { modifierKeyName, redoShortcutLabel } from '../../services/shortcutManager';
 
 interface KeyboardShortcutsModalProps {
   isOpen: boolean;
@@ -12,43 +13,67 @@ export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({
 }) => {
   if (!isOpen) return null;
 
+  const mod = modifierKeyName;
+
   const shortcuts = [
-    { category: 'Tools & Modes', items: [
-      { key: 'V', desc: 'Select tool' },
-      { key: 'S', desc: 'Space tool (vertical system spacing ↕)' },
-      { key: 'N', desc: 'Note entry tool' },
-      { key: 'R', desc: 'Rest entry tool' },
-      { key: 'L', desc: 'Lyrics entry tool' },
-      { key: 'T', desc: 'Score text tool' },
-      { key: 'Shift + C', desc: 'Add chord symbol' },
-      { key: 'Del / Backspace', desc: 'Clear subdivision (.) or beat (—)' },
-    ]},
-    { category: 'Clipboard & Editing', items: [
-      { key: 'Ctrl + X', desc: 'Cut selected notes / beat' },
-      { key: 'Ctrl + C', desc: 'Copy selected notes / beat' },
-      { key: 'Ctrl + V', desc: 'Paste copied notation at active beat' },
-    ]},
-    { category: 'Note Values & Subdivisions', items: [
-      { key: '1 - 4 or F1 - F4', desc: 'Note Value: 1, 2, 3, or 4 notes per beat' },
-      { key: '.', desc: 'Intentional empty subdivision (.)' },
-    ]},
-    { category: 'Note Pitch Entry (Computer Keyboard & Piano)', items: [
-      { key: 'A, B, C, D, E, F, G', desc: 'Insert note with specified letter pitch (including C)' },
-      { key: '↑ / ↓ Arrow', desc: 'Transpose selected note up or down by step' },
-      { key: '← / → Arrow', desc: 'Navigate across subdivisions and beats' },
-    ]},
-    { category: 'Lyrics Mode', items: [
-      { key: 'Type text', desc: 'Enter syllable for current note' },
-      { key: 'Space', desc: 'Advance to next note' },
-      { key: '-', desc: 'Add hyphen syllable separator and advance' },
-      { key: '_', desc: 'Add melisma extender line' },
-    ]},
-    { category: 'General & Playback', items: [
-      { key: 'Space', desc: 'Play / Stop playback (when not typing lyrics)' },
-      { key: 'Ctrl + Z', desc: 'Undo' },
-      { key: 'Ctrl + Y / Ctrl+Shift+Z', desc: 'Redo' },
-      { key: 'Ctrl + P', desc: 'Print score / Export clean PDF' },
-    ]},
+    {
+      category: 'Note Entry (Pianotastic)',
+      items: [
+        { key: 'C', desc: 'Insert Note C at selected beat/subdivision' },
+        { key: 'A, B, D, E, F, G', desc: 'Insert Note with pitch letter' },
+      ],
+    },
+    {
+      category: 'Chord Symbol',
+      items: [
+        { key: 'Shift + C', desc: 'Add Chord Symbol dialog at selected beat' },
+      ],
+    },
+    {
+      category: 'Note Values & Subdivisions',
+      items: [
+        { key: '1 or F1', desc: 'Value 1 (1 note per beat)' },
+        { key: '2 or F2', desc: 'Value 2 (2 notes per beat)' },
+        { key: '3 or F3', desc: 'Value 3 (3 notes per beat)' },
+        { key: '4 or F4', desc: 'Value 4 (4 notes per beat)' },
+        { key: '.', desc: 'Insert intentional empty subdivision (.)' },
+      ],
+    },
+    {
+      category: 'Edit',
+      items: [
+        { key: `${mod} + Z`, desc: 'Undo' },
+        { key: redoShortcutLabel, desc: 'Redo' },
+        { key: 'Del / Backspace', desc: 'Clear selected subdivision or beat (—)' },
+      ],
+    },
+    {
+      category: 'Copy / Paste',
+      items: [
+        { key: `${mod} + C`, desc: 'Copy selected notation (beat or bars)' },
+        { key: `${mod} + V`, desc: 'Paste copied notation at selected beat' },
+        { key: `${mod} + X`, desc: 'Cut selected notation' },
+      ],
+    },
+    {
+      category: 'Space Tool (Vertical Spacing ↕)',
+      items: [
+        { key: 'Shift + Enter', desc: 'Insert Vertical Space after selected bar' },
+        { key: `${mod} + Shift + ↑`, desc: 'Increase Selected Space (+10px)' },
+        { key: `${mod} + Shift + ↓`, desc: 'Decrease Selected Space (-10px)' },
+      ],
+    },
+    {
+      category: 'Navigation & Playback',
+      items: [
+        { key: '← / → Arrow', desc: 'Navigate across subdivisions and beats' },
+        { key: '↑ / ↓ Arrow', desc: 'Transpose selected note up/down' },
+        { key: 'Enter', desc: 'Toggle manual line break on selected bar' },
+        { key: 'Space', desc: 'Play / Pause playback' },
+        { key: `${mod} + S`, desc: 'Save Project to cloud / local storage' },
+        { key: `${mod} + P`, desc: 'Open Print Studio / Vector PDF' },
+      ],
+    },
   ];
 
   return (

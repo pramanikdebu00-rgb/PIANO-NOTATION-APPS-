@@ -179,7 +179,7 @@ export const NotationRenderer: React.FC<NotationRendererProps> = ({
   // Content-Aware Natural Width Calculator for Measure
   const getMeasureNaturalWidth = (measure: Measure): number => {
     const ts = measure.timeSignature || score.metadata.initialTimeSignature;
-    const totalBeats = getMeasureTotalBeats(measure, ts);
+    const totalBeats = getMeasureTotalBeats(measure, ts, score.metadata.indianTaal);
     const baseBeatWidth = 44; // standard readable single-beat width
     const beatPitchesList = getMeasureBeatPitches(measure, totalBeats, handTemplate);
     let contentRequired = 0;
@@ -469,7 +469,7 @@ export const NotationRenderer: React.FC<NotationRendererProps> = ({
           >
             {/* Page number badge indicator */}
             <div className="mb-2 px-3 py-0.5 rounded-full bg-stone-300/80 text-stone-700 text-[11px] font-medium tracking-wide flex items-center space-x-1.5 shadow-xs">
-              <span>Page {pageIndex + 1} of {pages.length}</span>
+              <span>Page {pageIndex + 1}</span>
               <span className="text-stone-400">•</span>
               <span className="uppercase text-[10px] text-stone-500 font-semibold">{isLandscape ? 'A4 Landscape' : 'A4 Portrait'}</span>
             </div>
@@ -832,9 +832,15 @@ export const NotationRenderer: React.FC<NotationRendererProps> = ({
 
                     {systemMeasures.map(({ measure, width, measureIdx, measureX }, mIdxInSys) => {
                       const isSelectedMeasure =
-                        selection.measureId === measure.id ||
-                        Boolean(selection.selectedMeasureIds?.includes(measure.id));
-                      const totalBeats = getMeasureTotalBeats(measure, score.metadata.initialTimeSignature);
+                        !isPrintView && (
+                          selection.measureId === measure.id ||
+                          Boolean(selection.selectedMeasureIds?.includes(measure.id))
+                        );
+                      const totalBeats = getMeasureTotalBeats(
+                        measure,
+                        score.metadata.initialTimeSignature,
+                        score.metadata.indianTaal
+                      );
                       const colWidth = width / totalBeats;
                       const beatPitches = getMeasureBeatPitches(measure, totalBeats, handTemplate);
 
@@ -979,7 +985,7 @@ export const NotationRenderer: React.FC<NotationRendererProps> = ({
                           )}
 
                           {/* Manual Line Break Indicator (Enter) */}
-                          {measure.systemBreak && (
+                          {measure.systemBreak && !isPrintView && (
                             <g
                               className="cursor-pointer group"
                               onClick={(e) => {
@@ -1019,12 +1025,20 @@ export const NotationRenderer: React.FC<NotationRendererProps> = ({
                             const colCenterX = colX + colWidth / 2;
                             const isLocked = isBeatLockedByPickup(measure.measureNumber, b, pickupBeat);
                             const isSelectedBeat =
-                              selection.measureId === measure.id && selection.beatIndex === b;
+                              !isPrintView && selection.measureId === measure.id && selection.beatIndex === b;
                             const isPlayhead =
+                              !isPrintView &&
                               playbackPosition?.measureIndex === measureIdx &&
                               Math.floor(playbackPosition.beat) === b;
 
-                            const chord = getChordForBeat(measure, b);
+                            const rawChord = getChordForBeat(measure, b);
+                            const isPlaceholderChord = (c?: string | null) => {
+                              if (!c) return true;
+                              const s = c.trim();
+                              return !s || s === '##' || s === '#' || s.toLowerCase() === 'chord' || s.toLowerCase() === '+ chord';
+                            };
+                            const chord = !isPlaceholderChord(rawChord) ? rawChord?.trim() : undefined;
+
                             const effVal =
                               measure.beatValues?.[b] ||
                               getEffectiveBeatValue(score, measureIdx, b);
@@ -1033,7 +1047,13 @@ export const NotationRenderer: React.FC<NotationRendererProps> = ({
                               effVal > 1
                                 ? Array.from({ length: effVal }, (_, i) => rawPitches[i] ?? null)
                                 : rawPitches;
-                            const lyric = measure.beatLyrics?.[b] || '';
+                            const rawLyric = measure.beatLyrics?.[b] || '';
+                            const isPlaceholderLyric = (l?: string | null) => {
+                              if (!l) return true;
+                              const s = l.trim();
+                              return !s || s.toLowerCase() === 'lyric' || s.toLowerCase() === '+ lyric' || s === '##';
+                            };
+                            const lyric = !isPlaceholderLyric(rawLyric) ? rawLyric.trim() : '';
                             const symbols = measure.beatSymbols?.[b] || [];
 
                             return (
@@ -1134,7 +1154,7 @@ export const NotationRenderer: React.FC<NotationRendererProps> = ({
                                       {chord}
                                     </text>
                                   ) : (
-                                    !isLocked && (
+                                    !isPrintView && !isLocked && (
                                       <text
                                         x={colCenterX}
                                         y={systemY + 37}
@@ -1377,7 +1397,7 @@ export const NotationRenderer: React.FC<NotationRendererProps> = ({
                                       {symbols.join(' ')}
                                     </text>
                                   ) : (
-                                    !isLocked && (
+                                    !isPrintView && !isLocked && (
                                       <text
                                         x={colCenterX}
                                         y={systemY + 112}
@@ -1439,7 +1459,7 @@ export const NotationRenderer: React.FC<NotationRendererProps> = ({
                                       {lyric}
                                     </text>
                                   ) : (
-                                    !isLocked && (
+                                    !isPrintView && !isLocked && (
                                       <text
                                         x={colCenterX}
                                         y={systemY + 133}
@@ -1614,7 +1634,7 @@ export const NotationRenderer: React.FC<NotationRendererProps> = ({
               })()}
 
               {/* Canonical Score Page Footer (Separate and independent from Header) */}
-              {score.layoutSettings.showFooter && (score.layoutSettings.footerShowOnAllPages !== false || pageIndex > 0) && (
+              {(score.layoutSettings.showFooter ?? true) && (score.layoutSettings.footerShowOnAllPages !== false || pageIndex > 0) && (
                 <g className="score-footer score-page-footer">
                   <line
                     x1={staffMarginLeft}
@@ -1657,9 +1677,7 @@ export const NotationRenderer: React.FC<NotationRendererProps> = ({
                       fill="#334155"
                       textAnchor="end"
                     >
-                      {score.layoutSettings.footerPageNumbering === 'simple'
-                        ? `${pageIndex + 1}`
-                        : `Page ${pageIndex + 1} of ${pages.length}`}
+                      {pageIndex + 1}
                     </text>
                   )}
                 </g>

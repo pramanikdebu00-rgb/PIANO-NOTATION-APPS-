@@ -275,7 +275,7 @@ export const ScoreMiniaturePreview: React.FC<ScoreMiniaturePreviewProps> = ({
           const mX = headerWidth + mIdx * measureWidth;
           const mRightX = mX + measureWidth;
           const ts = measure.timeSignature || initialTs;
-          const totalBeats = getMeasureTotalBeats(measure, ts);
+          const totalBeats = getMeasureTotalBeats(measure, ts, score.metadata?.indianTaal);
           const beatWidth = measureWidth / Math.max(1, totalBeats);
 
           // Get pitches for RH (or single staff)

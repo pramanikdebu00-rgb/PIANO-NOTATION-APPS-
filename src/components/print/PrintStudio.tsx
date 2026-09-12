@@ -17,9 +17,7 @@ import {
   Layers,
 } from 'lucide-react';
 import { NotationRenderer } from '../notation/NotationRenderer';
-import { jsPDF } from 'jspdf';
-import { svg2pdf } from 'svg2pdf.js';
-import html2canvas from 'html2canvas-pro';
+import { ExportService } from '../../services/exportService';
 
 interface PrintStudioProps {
   score: Score;
@@ -141,74 +139,48 @@ export const PrintStudio: React.FC<PrintStudioProps> = ({ score, onBackToEditor 
     window.print();
   };
 
-  // Generate and download high-resolution PDF
+  // Generate and download high-resolution vector PDF directly from canonical score
   const handleSaveAsPdf = async () => {
     try {
       setIsGeneratingPdf(true);
-      setPdfStatusMessage('Rendering score to PDF...');
+      setPdfStatusMessage('Rendering high-resolution vector PDF from canonical score...');
 
-      const isA4 = paperSize === 'a4';
-      const isLetter = paperSize === 'letter';
-      const isA3 = paperSize === 'a3';
-      const isLegal = paperSize === 'legal';
+      const paperSizeUpper = (
+        paperSize === 'letter'
+          ? 'Letter'
+          : paperSize === 'a3'
+          ? 'A3'
+          : paperSize === 'legal'
+          ? 'Legal'
+          : 'A4'
+      ) as 'A4' | 'Letter' | 'A3' | 'Legal';
 
-      const format = isLetter ? 'letter' : isA3 ? 'a3' : isLegal ? 'legal' : 'a4';
+      const targetPages = pageSelectionType === 'all' ? undefined : visiblePageIndices;
 
-      const pdf = new jsPDF({
-        orientation,
-        unit: 'mm',
-        format,
-      });
+      await ExportService.exportPDF(
+        printScore,
+        'professional',
+        printScore.metadata.title || 'Score',
+        {
+          paperSize: paperSizeUpper,
+          orientation,
+          margins: {
+            top: activeMargins.top,
+            right: activeMargins.right,
+            bottom: activeMargins.bottom,
+            left: activeMargins.left,
+          },
+          scaling: effectiveScale,
+          keyboardLayout:
+            printScore.layoutSettings.keyboardLayout ||
+            printScore.metadata.keyboardLayout ||
+            '61',
+          showHeader: true,
+          showFooter: true,
+        },
+        targetPages
+      );
 
-      const pdfPageWidth = pdf.internal.pageSize.getWidth();
-      const pdfPageHeight = pdf.internal.pageSize.getHeight();
-
-      const pageElements = document.querySelectorAll<HTMLElement>('.score-page');
-      if (!pageElements || pageElements.length === 0) {
-        window.print();
-        setIsGeneratingPdf(false);
-        setPdfStatusMessage(null);
-        return;
-      }
-
-      if (document.fonts?.ready) {
-        await document.fonts.ready;
-      }
-
-      for (let i = 0; i < pageElements.length; i++) {
-        if (i > 0) {
-          pdf.addPage(format, orientation);
-        }
-
-        const pageEl = pageElements[i];
-        setPdfStatusMessage(`Rendering vector page ${i + 1} of ${pageElements.length}...`);
-
-        const svgEl = pageEl.querySelector('svg');
-        if (svgEl) {
-          try {
-            const clonedSvg = svgEl.cloneNode(true) as SVGElement;
-            await svg2pdf(clonedSvg, pdf, {
-              x: 0,
-              y: 0,
-              width: pdfPageWidth,
-              height: pdfPageHeight,
-            });
-          } catch (vectorErr) {
-            console.warn('Vector PDF fallback for page ' + (i + 1), vectorErr);
-            const canvas = await html2canvas(pageEl, {
-              scale: 3.5,
-              useCORS: true,
-              backgroundColor: '#ffffff',
-              logging: false,
-            });
-            const imgData = canvas.toDataURL('image/png', 1.0);
-            pdf.addImage(imgData, 'PNG', 0, 0, pdfPageWidth, pdfPageHeight, undefined, 'FAST');
-          }
-        }
-      }
-
-      const cleanTitle = (score.metadata.title || 'Score').replace(/[/\\?%*:|"<>]/g, '_');
-      pdf.save(`${cleanTitle}.pdf`);
       setPdfStatusMessage('PDF generated successfully!');
       setTimeout(() => setPdfStatusMessage(null), 2500);
     } catch (err) {
