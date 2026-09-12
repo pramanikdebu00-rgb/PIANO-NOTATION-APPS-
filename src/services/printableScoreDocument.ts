@@ -639,7 +639,7 @@ export function buildPrintableScoreDocument(
               const isRestDot = Boolean(p && (p as any).isRest);
               const canonicalOctave = p?.octave ?? (handTemplate === 'LH' ? 3 : 4);
               const displayOct = getDisplayOctave(canonicalOctave, keyboardLayout);
-              const accGlyph = p?.accidental && p.accidental !== 'natural' ? getAccidentalGlyph(p.accidental) : '';
+              const accGlyph = p?.accidental ? getAccidentalGlyph(p.accidental) : '';
               const supOct = isEmptySub ? '' : getSuperscriptOctave(displayOct);
               const formattedNote = isEmptySub
                 ? isRestDot

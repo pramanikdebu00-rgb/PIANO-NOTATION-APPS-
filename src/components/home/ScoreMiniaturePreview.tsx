@@ -8,6 +8,7 @@ import {
   isBeatLockedByPickup,
 } from '../../utils/pianotasticNotation';
 import { KEY_SIGNATURES } from '../../utils/musicTheory';
+import { calculateAccidentalLayout, AccidentalVectorGlyph } from '../../utils/accidentalLayout';
 
 interface ScoreMiniaturePreviewProps {
   score: Score;
@@ -434,39 +435,56 @@ export const ScoreMiniaturePreview: React.FC<ScoreMiniaturePreviewProps> = ({
                         }
 
                         const subCenterX = bX + pIdx * subWidth + subWidth / 2;
-                        const accGlyph = getAccidentalGlyph(p.accidental);
                         const octChar = getSuperscriptOctave(
                           typeof p.octave === 'number' ? p.octave : 4
                         );
                         const fontSize = count > 2 ? 7.5 : count === 2 ? 8.5 : 9.5;
+                        const layout = calculateAccidentalLayout(
+                          {
+                            noteX: subCenterX,
+                            letterY: noteY,
+                            letterSize: fontSize,
+                            subBeatCount: count,
+                          },
+                          p.accidental
+                        );
 
                         return (
-                          <text
-                            key={`p-${pIdx}`}
-                            x={subCenterX}
-                            y={noteY}
-                            fontSize={fontSize}
-                            fontWeight="bold"
-                            fill="#0f172a"
-                            textAnchor="middle"
-                            fontFamily="'Plus Jakarta Sans', sans-serif"
-                          >
-                            <tspan>{p.step}</tspan>
-                            {accGlyph && (
-                              <tspan fontSize={fontSize * 0.8} dy={-1}>
-                                {accGlyph}
-                              </tspan>
+                          <g key={`p-${pIdx}`} className="note-cluster-vector">
+                            {layout.hasAccidental && layout.type && (
+                              <AccidentalVectorGlyph
+                                type={layout.type}
+                                x={layout.accidentalX}
+                                y={layout.accidentalY}
+                                scale={layout.accidentalScale}
+                                color="#0f172a"
+                              />
                             )}
+                            <text
+                              x={layout.letterX}
+                              y={layout.letterY}
+                              fontSize={layout.letterSize}
+                              fontWeight="bold"
+                              fill="#0f172a"
+                              textAnchor="middle"
+                              fontFamily="'Plus Jakarta Sans', sans-serif"
+                            >
+                              {p.step}
+                            </text>
                             {octChar && (
-                              <tspan
-                                fontSize={fontSize * 0.75}
-                                dy={accGlyph ? -1 : -2}
+                              <text
+                                x={layout.octaveX}
+                                y={layout.octaveY}
+                                fontSize={layout.octaveSize}
+                                fontWeight="bold"
                                 fill="#334155"
+                                textAnchor="middle"
+                                fontFamily="'Plus Jakarta Sans', sans-serif"
                               >
                                 {octChar}
-                              </tspan>
+                              </text>
                             )}
-                          </text>
+                          </g>
                         );
                       });
                     })()}
@@ -527,39 +545,56 @@ export const ScoreMiniaturePreview: React.FC<ScoreMiniaturePreviewProps> = ({
                           }
 
                           const subCenterX = bX + pIdx * subWidth + subWidth / 2;
-                          const accGlyph = getAccidentalGlyph(p.accidental);
                           const octChar = getSuperscriptOctave(
                             typeof p.octave === 'number' ? p.octave : 3
                           );
                           const fontSize = count > 2 ? 7.5 : count === 2 ? 8.5 : 9.5;
+                          const layout = calculateAccidentalLayout(
+                            {
+                              noteX: subCenterX,
+                              letterY: lhNoteY,
+                              letterSize: fontSize,
+                              subBeatCount: count,
+                            },
+                            p.accidental
+                          );
 
                           return (
-                            <text
-                              key={`lhp-${pIdx}`}
-                              x={subCenterX}
-                              y={lhNoteY}
-                              fontSize={fontSize}
-                              fontWeight="bold"
-                              fill="#0f172a"
-                              textAnchor="middle"
-                              fontFamily="'Plus Jakarta Sans', sans-serif"
-                            >
-                              <tspan>{p.step}</tspan>
-                              {accGlyph && (
-                                <tspan fontSize={fontSize * 0.8} dy={-1}>
-                                  {accGlyph}
-                                </tspan>
+                            <g key={`lhp-${pIdx}`} className="note-cluster-vector">
+                              {layout.hasAccidental && layout.type && (
+                                <AccidentalVectorGlyph
+                                  type={layout.type}
+                                  x={layout.accidentalX}
+                                  y={layout.accidentalY}
+                                  scale={layout.accidentalScale}
+                                  color="#0f172a"
+                                />
                               )}
+                              <text
+                                x={layout.letterX}
+                                y={layout.letterY}
+                                fontSize={layout.letterSize}
+                                fontWeight="bold"
+                                fill="#0f172a"
+                                textAnchor="middle"
+                                fontFamily="'Plus Jakarta Sans', sans-serif"
+                              >
+                                {p.step}
+                              </text>
                               {octChar && (
-                                <tspan
-                                  fontSize={fontSize * 0.75}
-                                  dy={accGlyph ? -1 : -2}
+                                <text
+                                  x={layout.octaveX}
+                                  y={layout.octaveY}
+                                  fontSize={layout.octaveSize}
+                                  fontWeight="bold"
                                   fill="#334155"
+                                  textAnchor="middle"
+                                  fontFamily="'Plus Jakarta Sans', sans-serif"
                                 >
                                   {octChar}
-                                </tspan>
+                                </text>
                               )}
-                            </text>
+                            </g>
                           );
                         });
                       })()}

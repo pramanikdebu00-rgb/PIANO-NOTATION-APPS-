@@ -29,6 +29,7 @@ import { audioEngine } from '../../services/audioEngine';
 import { Check, Trash2, X } from 'lucide-react';
 import { PageTextObjectsLayer } from './PageTextObjectsLayer';
 import { PageSpacingLayer } from './PageSpacingLayer';
+import { calculateAccidentalLayout, AccidentalVectorGlyph } from '../../utils/accidentalLayout';
 
 interface NotationRendererProps {
   score: Score;
@@ -196,12 +197,6 @@ export const NotationRenderer: React.FC<NotationRendererProps> = ({
       if (count === 2) noteSpacing = 58;
       else if (count === 3) noteSpacing = 78;
       else if (count >= 4) noteSpacing = 24 * count + 6;
-
-      // Accidental extra space
-      const hasAccidental = pitches.some(
-        (p) => Boolean(p && p.accidental && p.accidental !== 'natural')
-      );
-      if (hasAccidental) noteSpacing += 8;
 
       // Chord text width requirement
       const chord = getChordForBeat(measure, b);
@@ -1412,102 +1407,58 @@ export const NotationRenderer: React.FC<NotationRendererProps> = ({
                                                 {isRestDot ? '.' : (count > 1 ? '.' : '—')}
                                               </text>
                                             ) : (() => {
-                                              const hasAcc = Boolean(p?.accidental && p.accidental !== 'natural');
                                               const dispOct = p ? String(getDisplayOctave(p.octave ?? (handTemplate === 'LH' ? 3 : 4), keyboardLayout)) : '';
                                               const letterSize = count > 2 ? 14 : count === 2 ? 17 : 18;
-                                              const octSize = count > 2 ? 9 : count === 2 ? 11 : 12;
-                                              const accScale = count > 2 ? 0.75 : count === 2 ? 0.9 : 1.0;
-
-                                              const letterW = letterSize * 0.58;
-                                              const accW = hasAcc ? 8 * accScale : 0;
-                                              const octW = 6.5 * (octSize / 11);
-                                              const totalClusterW = letterW + accW + octW;
-
-                                              const startX = noteX - totalClusterW / 2;
-                                              const letterX = startX + letterW / 2;
-                                              const accX = startX + letterW + accW / 2;
-                                              const octX = startX + letterW + accW + octW / 2;
+                                              const layout = calculateAccidentalLayout(
+                                                {
+                                                  noteX,
+                                                  letterY: systemY + 84,
+                                                  letterSize,
+                                                  subBeatCount: count,
+                                                },
+                                                p?.accidental
+                                              );
                                               const mainColor = isSubBeatActive ? '#b45309' : '#0f172a';
 
                                               return (
-                                                <g className="note-cluster-vector">
-                                                  {/* Note Letter */}
-                                                  <text
-                                                    x={letterX}
-                                                    y={systemY + 84}
-                                                    fontFamily="'Plus Jakarta Sans', sans-serif"
-                                                    fontSize={letterSize}
-                                                    fontWeight="bold"
-                                                    fill={mainColor}
-                                                    textAnchor="middle"
-                                                  >
-                                                    {p?.step}
-                                                  </text>
+                                                  <g className="note-cluster-vector">
+                                                    {/* Vector Accidental — upper-right mathematical superscript positioning */}
+                                                    {layout.hasAccidental && layout.type && (
+                                                      <AccidentalVectorGlyph
+                                                        type={layout.type}
+                                                        x={layout.accidentalX}
+                                                        y={layout.accidentalY}
+                                                        scale={layout.accidentalScale}
+                                                        color={mainColor}
+                                                      />
+                                                    )}
 
-                                                  {/* Vector Accidental */}
-                                                  {hasAcc && (
-                                                    p?.accidental === 'flat' ? (
-                                                      <g stroke={mainColor} fill={mainColor}>
-                                                        <line
-                                                          x1={accX - 2.5 * accScale}
-                                                          y1={systemY + 73}
-                                                          x2={accX - 2.5 * accScale}
-                                                          y2={systemY + 84.5}
-                                                          strokeWidth={1.0 * accScale}
-                                                          strokeLinecap="round"
-                                                        />
-                                                        <path
-                                                          d={`M ${accX - 2.5 * accScale} ${systemY + 78.5} C ${accX + 3.5 * accScale} ${systemY + 76.5} ${accX + 3.5 * accScale} ${systemY + 83.5} ${accX - 2.5 * accScale} ${systemY + 84.5} Z`}
-                                                          strokeWidth={0.5 * accScale}
-                                                        />
-                                                      </g>
-                                                    ) : (
-                                                      <g stroke={mainColor} strokeLinecap="round">
-                                                        <line
-                                                          x1={accX - 2.2 * accScale}
-                                                          y1={systemY + 75}
-                                                          x2={accX - 2.2 * accScale}
-                                                          y2={systemY + 86}
-                                                          strokeWidth={0.9 * accScale}
-                                                        />
-                                                        <line
-                                                          x1={accX + 2.2 * accScale}
-                                                          y1={systemY + 74}
-                                                          x2={accX + 2.2 * accScale}
-                                                          y2={systemY + 85}
-                                                          strokeWidth={0.9 * accScale}
-                                                        />
-                                                        <line
-                                                          x1={accX - 4.5 * accScale}
-                                                          y1={systemY + 82}
-                                                          x2={accX + 4.5 * accScale}
-                                                          y2={systemY + 80}
-                                                          strokeWidth={1.3 * accScale}
-                                                        />
-                                                        <line
-                                                          x1={accX - 4.5 * accScale}
-                                                          y1={systemY + 78.5}
-                                                          x2={accX + 4.5 * accScale}
-                                                          y2={systemY + 76.5}
-                                                          strokeWidth={1.3 * accScale}
-                                                        />
-                                                      </g>
-                                                    )
-                                                  )}
+                                                    {/* Note Letter — authoritative position untouched */}
+                                                    <text
+                                                      x={layout.letterX}
+                                                      y={layout.letterY}
+                                                      fontFamily="'Plus Jakarta Sans', sans-serif"
+                                                      fontSize={layout.letterSize}
+                                                      fontWeight="bold"
+                                                      fill={mainColor}
+                                                      textAnchor="middle"
+                                                    >
+                                                      {p?.step}
+                                                    </text>
 
-                                                  {/* Superscript Octave ASCII Digit */}
-                                                  <text
-                                                    x={octX}
-                                                    y={systemY + 76}
-                                                    fontFamily="'Plus Jakarta Sans', sans-serif"
-                                                    fontSize={octSize}
-                                                    fontWeight="bold"
-                                                    fill={isSubBeatActive ? '#92400e' : '#1e293b'}
-                                                    textAnchor="middle"
-                                                  >
-                                                    {dispOct}
-                                                  </text>
-                                                </g>
+                                                    {/* Superscript Octave ASCII Digit — authoritative position untouched */}
+                                                    <text
+                                                      x={layout.octaveX}
+                                                      y={layout.octaveY}
+                                                      fontFamily="'Plus Jakarta Sans', sans-serif"
+                                                      fontSize={layout.octaveSize}
+                                                      fontWeight="bold"
+                                                      fill={isSubBeatActive ? '#92400e' : '#1e293b'}
+                                                      textAnchor="middle"
+                                                    >
+                                                      {dispOct}
+                                                    </text>
+                                                  </g>
                                               );
                                             })()}
                                           </g>

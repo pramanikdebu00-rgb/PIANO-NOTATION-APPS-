@@ -21,52 +21,79 @@ import {
   PrintableScoreDocument,
   PrintableDocumentOptions,
 } from './printableScoreDocument';
+import { calculateAccidentalLayout } from '../utils/accidentalLayout';
 
 /**
- * Draw crisp vector sharp (♯) with line primitives to guarantee high-DPI vector PDF quality
+ * Draw crisp vector sharp (♯) with line primitives matching canonical geometry
  */
-function drawVectorSharp(pdf: jsPDF, x: number, y: number, size: number) {
+function drawVectorSharp(pdf: jsPDF, x: number, y: number, s: number) {
   pdf.setDrawColor(15, 23, 42);
-  pdf.setLineWidth(0.65);
-  pdf.line(x, y - size * 0.45, x, y + size * 0.35);
-  pdf.line(x + size * 0.28, y - size * 0.35, x + size * 0.28, y + size * 0.45);
-  pdf.setLineWidth(1.05);
-  pdf.line(x - size * 0.1, y - size * 0.08, x + size * 0.38, y - size * 0.22);
-  pdf.line(x - size * 0.1, y + size * 0.22, x + size * 0.38, y + size * 0.08);
+  pdf.setLineWidth(0.45 * s);
+  // Left vertical line
+  pdf.line(x - 1.5 * s, y - 5.2 * s, x - 1.5 * s, y + 4.6 * s);
+  // Right vertical line
+  pdf.line(x + 1.5 * s, y - 4.6 * s, x + 1.5 * s, y + 5.2 * s);
+  // Upper slanted crossbar
+  pdf.setLineWidth(0.75 * s);
+  pdf.line(x - 2.8 * s, y - 1.2 * s, x + 2.8 * s, y - 2.4 * s);
+  // Lower slanted crossbar
+  pdf.line(x - 2.8 * s, y + 2.4 * s, x + 2.8 * s, y + 1.2 * s);
 }
 
 /**
- * Draw crisp vector flat (♭) with line and curve primitives
+ * Draw crisp vector flat (♭) with line and curve primitives matching canonical geometry
  */
-function drawVectorFlat(pdf: jsPDF, x: number, y: number, size: number) {
+function drawVectorFlat(pdf: jsPDF, x: number, y: number, s: number) {
   pdf.setDrawColor(15, 23, 42);
-  pdf.setLineWidth(0.75);
-  pdf.line(x, y - size * 0.55, x, y + size * 0.25);
+  pdf.setFillColor(15, 23, 42);
+  pdf.setLineWidth(0.45 * s);
+  const stemX = x - 1.4 * s;
+  pdf.line(stemX, y - 5.5 * s, stemX, y + 4.5 * s);
   pdf.lines(
     [
-      [size * 0.28, -size * 0.05],
-      [0, -size * 0.25],
-      [-size * 0.28, -size * 0.05],
+      [3.6 * s, 1.0 * s],
+      [0, 3.0 * s],
+      [-3.6 * s, 0.5 * s],
     ],
-    x,
-    y + size * 0.25,
+    stemX,
+    y - 0.2 * s,
     [1, 1],
-    'S',
+    'FD',
     true
   );
 }
 
 /**
- * Draw crisp vector natural (♮) with line primitives
+ * Draw crisp vector natural (♮) with line primitives matching canonical geometry
  */
-function drawVectorNatural(pdf: jsPDF, x: number, y: number, size: number) {
+function drawVectorNatural(pdf: jsPDF, x: number, y: number, s: number) {
   pdf.setDrawColor(15, 23, 42);
-  pdf.setLineWidth(0.7);
-  pdf.line(x, y - size * 0.55, x, y + size * 0.15);
-  pdf.line(x + size * 0.28, y - size * 0.3, x + size * 0.28, y + size * 0.4);
-  pdf.setLineWidth(0.95);
-  pdf.line(x, y - size * 0.3, x + size * 0.28, y - size * 0.3);
-  pdf.line(x, y + size * 0.15, x + size * 0.28, y + size * 0.15);
+  pdf.setLineWidth(0.45 * s);
+  const leftX = x - 1.4 * s;
+  const rightX = x + 1.4 * s;
+  pdf.line(leftX, y - 5.5 * s, leftX, y + 2.2 * s);
+  pdf.line(rightX, y - 2.2 * s, rightX, y + 5.5 * s);
+  pdf.setLineWidth(0.75 * s);
+  pdf.line(leftX, y - 1.4 * s, rightX, y - 2.2 * s);
+  pdf.line(leftX, y + 2.2 * s, rightX, y + 1.4 * s);
+}
+
+/**
+ * Draw crisp vector double sharp (𝄪)
+ */
+function drawVectorDoubleSharp(pdf: jsPDF, x: number, y: number, s: number) {
+  pdf.setDrawColor(15, 23, 42);
+  pdf.setLineWidth(0.75 * s);
+  pdf.line(x - 2.4 * s, y - 2.4 * s, x + 2.4 * s, y + 2.4 * s);
+  pdf.line(x - 2.4 * s, y + 2.4 * s, x + 2.4 * s, y - 2.4 * s);
+}
+
+/**
+ * Draw crisp vector double flat (𝄫)
+ */
+function drawVectorDoubleFlat(pdf: jsPDF, x: number, y: number, s: number) {
+  drawVectorFlat(pdf, x - 1.8 * s, y, s * 0.9);
+  drawVectorFlat(pdf, x + 1.8 * s, y, s * 0.9);
 }
 
 /**
@@ -365,40 +392,41 @@ function renderCanonicalDocumentToPdf(
               pdf.setTextColor(15, 23, 42);
 
               const letterStr = note.step || '';
-              const letterWidth = pdf.getStringUnitWidth(letterStr) * fontSize;
+              const layout = calculateAccidentalLayout(
+                {
+                  noteX: nX,
+                  letterY: nY,
+                  letterSize: fontSize,
+                  subBeatCount: note.subBeatCount,
+                  scale,
+                },
+                note.accidental
+              );
 
-              const hasAcc = Boolean(note.accidental && note.accidental !== 'natural');
-              const accWidth = hasAcc ? 6.5 * scale : 0;
-              const octaveDigit = String(note.displayOctave);
-              const octaveFontSize = Math.round(fontSize * 0.65);
-              const octaveWidth = pdf.getStringUnitWidth(octaveDigit) * octaveFontSize;
+              // Note letter — authoritative position untouched
+              pdf.text(letterStr, layout.letterX, layout.letterY, { align: 'center' });
 
-              const totalClusterWidth = letterWidth + accWidth + octaveWidth;
-              const clusterStartX = nX - totalClusterWidth / 2;
-
-              // Note letter
-              pdf.text(letterStr, clusterStartX + letterWidth / 2, nY, { align: 'center' });
-
-              // Accidental vector glyph (♯, ♭, ♮)
-              let currentX = clusterStartX + letterWidth;
-              if (hasAcc) {
-                const accX = currentX + 1.5 * scale;
-                const accY = nY - 3 * scale;
-                if (note.accidental === 'sharp') {
-                  drawVectorSharp(pdf, accX, accY, fontSize * 0.75);
-                } else if (note.accidental === 'flat') {
-                  drawVectorFlat(pdf, accX, accY, fontSize * 0.75);
-                } else if (note.accidental === 'natural') {
-                  drawVectorNatural(pdf, accX, accY, fontSize * 0.75);
+              // Accidental vector glyph (♯, ♭, ♮, etc.) — upper-right mathematical superscript positioning
+              if (layout.hasAccidental && layout.type) {
+                if (layout.type === 'sharp') {
+                  drawVectorSharp(pdf, layout.accidentalX, layout.accidentalY, layout.accidentalScale);
+                } else if (layout.type === 'flat') {
+                  drawVectorFlat(pdf, layout.accidentalX, layout.accidentalY, layout.accidentalScale);
+                } else if (layout.type === 'natural') {
+                  drawVectorNatural(pdf, layout.accidentalX, layout.accidentalY, layout.accidentalScale);
+                } else if (layout.type === 'double_sharp') {
+                  drawVectorDoubleSharp(pdf, layout.accidentalX, layout.accidentalY, layout.accidentalScale);
+                } else if (layout.type === 'double_flat') {
+                  drawVectorDoubleFlat(pdf, layout.accidentalX, layout.accidentalY, layout.accidentalScale);
                 }
-                currentX += accWidth;
               }
 
-              // Superscript Octave number: standard ASCII digit, raised Y position
+              // Superscript Octave number: standard ASCII digit, authoritative position untouched
+              const octaveDigit = String(note.displayOctave);
               pdf.setFont('helvetica', 'bold');
-              pdf.setFontSize(octaveFontSize);
+              pdf.setFontSize(layout.octaveSize);
               pdf.setTextColor(30, 41, 59);
-              pdf.text(octaveDigit, currentX + octaveWidth / 2, nY - 5 * scale, { align: 'center' });
+              pdf.text(octaveDigit, layout.octaveX, layout.octaveY, { align: 'center' });
             }
           });
 
