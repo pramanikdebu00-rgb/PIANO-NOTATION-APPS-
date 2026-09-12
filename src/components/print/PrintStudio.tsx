@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo, useEffect } from 'react';
+import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import { Score } from '../../types/score';
 import {
   Printer,
@@ -15,16 +15,27 @@ import {
   FileText,
   Copy,
   Layers,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  Type,
 } from 'lucide-react';
+import { jsPDF } from 'jspdf';
+import { svg2pdf } from 'svg2pdf.js';
 import { NotationRenderer } from '../notation/NotationRenderer';
 import { ExportService } from '../../services/exportService';
 
 interface PrintStudioProps {
   score: Score;
   onBackToEditor: () => void;
+  onUpdateScore?: (score: Score) => void;
 }
 
-export const PrintStudio: React.FC<PrintStudioProps> = ({ score, onBackToEditor }) => {
+export const PrintStudio: React.FC<PrintStudioProps> = ({
+  score,
+  onBackToEditor,
+  onUpdateScore,
+}) => {
   // 1. Printer selection
   const [selectedPrinter, setSelectedPrinter] = useState<string>('default');
 
@@ -57,6 +68,57 @@ export const PrintStudio: React.FC<PrintStudioProps> = ({ score, onBackToEditor 
   // 7. Scaling
   const [scalingMode, setScalingMode] = useState<'fit' | 'actual' | 'custom'>('actual');
   const [customScale, setCustomScale] = useState<number>(100);
+
+  // 8. Header Controls
+  const [showHeader, setShowHeader] = useState<boolean>(
+    score.layoutSettings.showHeader ?? true
+  );
+  const [headerCustomText, setHeaderCustomText] = useState<string>(
+    score.layoutSettings.headerCustomText ?? ''
+  );
+  const [headerAlignment, setHeaderAlignment] = useState<'left' | 'center' | 'right'>(
+    score.layoutSettings.headerAlignment ?? 'center'
+  );
+  const [headerFontSize, setHeaderFontSize] = useState<number>(
+    score.layoutSettings.headerFontSize ?? 10
+  );
+  const [headerSpaceFromTop, setHeaderSpaceFromTop] = useState<number>(
+    score.layoutSettings.headerSpaceFromTop ?? 24
+  );
+  const [headerSpaceBelow, setHeaderSpaceBelow] = useState<number>(
+    score.layoutSettings.headerSpaceBelow ?? 16
+  );
+
+  // 9. Footer Controls
+  const [showFooter, setShowFooter] = useState<boolean>(
+    score.layoutSettings.showFooter ?? true
+  );
+  const [footerCustomText, setFooterCustomText] = useState<string>(
+    score.layoutSettings.footerCustomText ?? (score.metadata.copyright || '')
+  );
+  const [footerAlignment, setFooterAlignment] = useState<'left' | 'center' | 'right'>(
+    score.layoutSettings.footerAlignment ?? 'left'
+  );
+  const [footerFontSize, setFooterFontSize] = useState<number>(
+    score.layoutSettings.footerFontSize ?? 9.5
+  );
+  const [footerSpaceFromBottom, setFooterSpaceFromBottom] = useState<number>(
+    score.layoutSettings.footerSpaceFromBottom ?? 20
+  );
+  const [footerSpaceAbove, setFooterSpaceAbove] = useState<number>(
+    score.layoutSettings.footerSpaceAbove ?? 14
+  );
+
+  // 10. Page Numbers
+  const [showPageNumber, setShowPageNumber] = useState<boolean>(
+    score.layoutSettings.showPageNumber ?? true
+  );
+  const [pageNumberPosition, setPageNumberPosition] = useState<'left' | 'center' | 'right'>(
+    score.layoutSettings.pageNumberPosition ?? 'right'
+  );
+  const [pageNumberFormat, setPageNumberFormat] = useState<'page' | 'pageOfTotal'>(
+    score.layoutSettings.footerPageNumbering === 'pageOfTotal' || score.layoutSettings.footerIncludeTotalPages ? 'pageOfTotal' : 'page'
+  );
 
   // Preview & Pagination State
   const [totalPages, setTotalPages] = useState<number>(1);
@@ -94,9 +156,56 @@ export const PrintStudio: React.FC<PrintStudioProps> = ({ score, onBackToEditor 
         pageSize: paperSize === 'letter' ? 'Letter' : paperSize === 'a3' ? 'A3' : paperSize === 'legal' ? 'Legal' : 'A4',
         orientation,
         pageMargins: activeMargins,
+        showHeader,
+        headerCustomText,
+        headerAlignment,
+        headerFontSize,
+        headerSpaceFromTop,
+        headerSpaceBelow,
+        showFooter,
+        footerCustomText,
+        footerAlignment,
+        footerFontSize,
+        footerSpaceFromBottom,
+        footerSpaceAbove,
+        showPageNumber,
+        pageNumberPosition,
+        footerPageNumbering: pageNumberFormat,
+        footerIncludeTotalPages: pageNumberFormat === 'pageOfTotal',
       },
     };
-  }, [score, paperSize, orientation, activeMargins]);
+  }, [
+    score,
+    paperSize,
+    orientation,
+    activeMargins,
+    showHeader,
+    headerCustomText,
+    headerAlignment,
+    headerFontSize,
+    headerSpaceFromTop,
+    headerSpaceBelow,
+    showFooter,
+    footerCustomText,
+    footerAlignment,
+    footerFontSize,
+    footerSpaceFromBottom,
+    footerSpaceAbove,
+    showPageNumber,
+    pageNumberPosition,
+    pageNumberFormat,
+  ]);
+
+  const handleBackToEditor = () => {
+    if (onUpdateScore) {
+      onUpdateScore(printScore);
+    }
+    onBackToEditor();
+  };
+
+  const handlePageCountCalculated = useCallback((count: number) => {
+    setTotalPages((prev) => (count > 0 && count !== prev ? count : prev));
+  }, []);
 
   // Calculate visible page indices based on selection
   const visiblePageIndices = useMemo(() => {
@@ -139,11 +248,58 @@ export const PrintStudio: React.FC<PrintStudioProps> = ({ score, onBackToEditor 
     window.print();
   };
 
-  // Generate and download high-resolution vector PDF directly from canonical score
+  // Generate and download high-resolution vector PDF directly from canonical score and preview DOM
   const handleSaveAsPdf = async () => {
     try {
       setIsGeneratingPdf(true);
-      setPdfStatusMessage('Rendering high-resolution vector PDF from canonical score...');
+      setPdfStatusMessage('Rendering exact vector PDF from Print Preview...');
+
+      const container = printAreaRef.current;
+      const pageEls = Array.from(
+        container?.querySelectorAll<HTMLElement>('.score-page') || []
+      );
+
+      const targetPages = pageSelectionType === 'all' ? undefined : visiblePageIndices;
+      const pagesToExport = targetPages
+        ? pageEls.filter((_, idx) => targetPages.includes(idx))
+        : pageEls;
+
+      if (pagesToExport.length > 0) {
+        const firstSvg = pagesToExport[0].querySelector('svg');
+        const svgWidth = firstSvg ? parseFloat(firstSvg.getAttribute('width') || '794') : 794;
+        const svgHeight = firstSvg ? parseFloat(firstSvg.getAttribute('height') || '1123') : 1123;
+        const pdfWidth = svgWidth * 0.75;
+        const pdfHeight = svgHeight * 0.75;
+
+        const pdf = new jsPDF({
+          orientation,
+          unit: 'pt',
+          format: [pdfWidth, pdfHeight],
+        });
+
+        for (let i = 0; i < pagesToExport.length; i++) {
+          if (i > 0) {
+            pdf.addPage([pdfWidth, pdfHeight], orientation);
+          }
+          const svgEl = pagesToExport[i].querySelector('svg');
+          if (svgEl) {
+            const clonedSvg = svgEl.cloneNode(true) as SVGElement;
+            clonedSvg.querySelectorAll('.print\\:hidden, .print-preview-badge').forEach((el) => el.remove());
+            await svg2pdf(clonedSvg, pdf, {
+              x: 0,
+              y: 0,
+              width: pdfWidth,
+              height: pdfHeight,
+            });
+          }
+        }
+
+        const cleanTitle = (printScore.metadata.title || 'Score').replace(/[/\\?%*:|"<>]/g, '_');
+        pdf.save(`${cleanTitle}.pdf`);
+        setPdfStatusMessage('PDF saved successfully!');
+        setTimeout(() => setPdfStatusMessage(null), 2500);
+        return;
+      }
 
       const paperSizeUpper = (
         paperSize === 'letter'
@@ -154,8 +310,6 @@ export const PrintStudio: React.FC<PrintStudioProps> = ({ score, onBackToEditor 
           ? 'Legal'
           : 'A4'
       ) as 'A4' | 'Letter' | 'A3' | 'Legal';
-
-      const targetPages = pageSelectionType === 'all' ? undefined : visiblePageIndices;
 
       await ExportService.exportPDF(
         printScore,
@@ -175,8 +329,8 @@ export const PrintStudio: React.FC<PrintStudioProps> = ({ score, onBackToEditor 
             printScore.layoutSettings.keyboardLayout ||
             printScore.metadata.keyboardLayout ||
             '61',
-          showHeader: true,
-          showFooter: true,
+          showHeader,
+          showFooter,
         },
         targetPages
       );
@@ -184,8 +338,19 @@ export const PrintStudio: React.FC<PrintStudioProps> = ({ score, onBackToEditor 
       setPdfStatusMessage('PDF generated successfully!');
       setTimeout(() => setPdfStatusMessage(null), 2500);
     } catch (err) {
-      console.error('Failed to generate PDF:', err);
-      alert('Could not generate PDF. You can also choose "Save as PDF" in the print dialog.');
+      console.error('DOM vector PDF generation error, using canonical fallback:', err);
+      try {
+        await ExportService.exportPDF(
+          printScore,
+          'professional',
+          printScore.metadata.title || 'Score'
+        );
+        setPdfStatusMessage('PDF generated successfully!');
+        setTimeout(() => setPdfStatusMessage(null), 2500);
+      } catch (fallbackErr) {
+        console.error('Fallback export error:', fallbackErr);
+        alert('Could not generate PDF. You can also choose "Save as PDF" in the print dialog.');
+      }
     } finally {
       setIsGeneratingPdf(false);
     }
@@ -245,7 +410,7 @@ export const PrintStudio: React.FC<PrintStudioProps> = ({ score, onBackToEditor 
         <div className="px-5 py-3.5 border-b border-stone-200 flex items-center justify-between bg-stone-50">
           <button
             id="print-back-to-editor-btn"
-            onClick={onBackToEditor}
+            onClick={handleBackToEditor}
             className="flex items-center space-x-1.5 text-xs font-semibold text-stone-700 hover:text-stone-900 px-3 py-1.5 rounded-lg hover:bg-stone-200/70 border border-stone-200 transition-colors shadow-2xs"
           >
             <ArrowLeft className="w-4 h-4" />
@@ -566,6 +731,310 @@ export const PrintStudio: React.FC<PrintStudioProps> = ({ score, onBackToEditor 
               </span>
             </div>
           </div>
+
+          <hr className="border-stone-200" />
+
+          {/* ================= HEADER CONTROLS ================= */}
+          <div className="space-y-3 bg-stone-50/80 p-3 rounded-xl border border-stone-200">
+            <div className="flex items-center justify-between">
+              <label className="font-bold text-stone-900 uppercase tracking-wider text-[11px] flex items-center space-x-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showHeader}
+                  onChange={(e) => setShowHeader(e.target.checked)}
+                  className="w-3.5 h-3.5 text-amber-600 rounded focus:ring-amber-500 accent-amber-600 cursor-pointer"
+                />
+                <span>Score Header</span>
+              </label>
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${showHeader ? 'bg-amber-100 text-amber-800' : 'bg-stone-200 text-stone-600'}`}>
+                {showHeader ? 'Enabled' : 'Disabled'}
+              </span>
+            </div>
+
+            {showHeader && (
+              <div className="space-y-2.5 pt-1">
+                {/* Custom Header Text */}
+                <div>
+                  <span className="text-[10px] font-semibold text-stone-600 block mb-1">
+                    Custom Header Text
+                  </span>
+                  <input
+                    type="text"
+                    placeholder={score.metadata.title || 'Score Title (Default)'}
+                    value={headerCustomText}
+                    onChange={(e) => setHeaderCustomText(e.target.value)}
+                    className="w-full px-2.5 py-1.5 text-xs border border-stone-300 rounded-lg bg-white focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                  />
+                </div>
+
+                {/* Header Alignment */}
+                <div>
+                  <span className="text-[10px] font-semibold text-stone-600 block mb-1">
+                    Alignment
+                  </span>
+                  <div className="grid grid-cols-3 gap-1">
+                    {(['left', 'center', 'right'] as const).map((align) => (
+                      <button
+                        key={`header-align-${align}`}
+                        type="button"
+                        onClick={() => setHeaderAlignment(align)}
+                        className={`py-1.5 px-2 rounded-lg border text-xs font-semibold flex items-center justify-center space-x-1 transition-colors ${
+                          headerAlignment === align
+                            ? 'bg-amber-50 border-amber-500 text-amber-900 shadow-2xs'
+                            : 'bg-white border-stone-200 text-stone-600 hover:bg-stone-50'
+                        }`}
+                      >
+                        {align === 'left' && <AlignLeft className="w-3 h-3" />}
+                        {align === 'center' && <AlignCenter className="w-3 h-3" />}
+                        {align === 'right' && <AlignRight className="w-3 h-3" />}
+                        <span className="capitalize">{align}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Header Font Size */}
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-[10px] font-semibold text-stone-600">Font Size</span>
+                    <span className="text-[10px] font-mono font-bold text-stone-700">{headerFontSize} pt</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="8"
+                    max="18"
+                    step="0.5"
+                    value={headerFontSize}
+                    onChange={(e) => setHeaderFontSize(Number(e.target.value))}
+                    className="w-full accent-amber-600 cursor-pointer"
+                  />
+                </div>
+
+                {/* Space from Top of Page */}
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-[10px] font-semibold text-stone-600">Space from Top</span>
+                    <span className="text-[10px] font-mono font-bold text-stone-700">{headerSpaceFromTop} px</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="10"
+                    max="60"
+                    step="2"
+                    value={headerSpaceFromTop}
+                    onChange={(e) => setHeaderSpaceFromTop(Number(e.target.value))}
+                    className="w-full accent-amber-600 cursor-pointer"
+                  />
+                </div>
+
+                {/* Space between Header and Score */}
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-[10px] font-semibold text-stone-600">Space Below Header</span>
+                    <span className="text-[10px] font-mono font-bold text-stone-700">{headerSpaceBelow} px</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="6"
+                    max="48"
+                    step="2"
+                    value={headerSpaceBelow}
+                    onChange={(e) => setHeaderSpaceBelow(Number(e.target.value))}
+                    className="w-full accent-amber-600 cursor-pointer"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ================= FOOTER CONTROLS ================= */}
+          <div className="space-y-3 bg-stone-50/80 p-3 rounded-xl border border-stone-200">
+            <div className="flex items-center justify-between">
+              <label className="font-bold text-stone-900 uppercase tracking-wider text-[11px] flex items-center space-x-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showFooter}
+                  onChange={(e) => setShowFooter(e.target.checked)}
+                  className="w-3.5 h-3.5 text-amber-600 rounded focus:ring-amber-500 accent-amber-600 cursor-pointer"
+                />
+                <span>Score Footer</span>
+              </label>
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${showFooter ? 'bg-amber-100 text-amber-800' : 'bg-stone-200 text-stone-600'}`}>
+                {showFooter ? 'Enabled' : 'Disabled'}
+              </span>
+            </div>
+
+            {showFooter && (
+              <div className="space-y-2.5 pt-1">
+                {/* Custom Footer Text */}
+                <div>
+                  <span className="text-[10px] font-semibold text-stone-600 block mb-1">
+                    Custom Footer Text
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="e.g. © 2025 All rights reserved"
+                    value={footerCustomText}
+                    onChange={(e) => setFooterCustomText(e.target.value)}
+                    className="w-full px-2.5 py-1.5 text-xs border border-stone-300 rounded-lg bg-white focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                  />
+                </div>
+
+                {/* Footer Alignment */}
+                <div>
+                  <span className="text-[10px] font-semibold text-stone-600 block mb-1">
+                    Alignment
+                  </span>
+                  <div className="grid grid-cols-3 gap-1">
+                    {(['left', 'center', 'right'] as const).map((align) => (
+                      <button
+                        key={`footer-align-${align}`}
+                        type="button"
+                        onClick={() => setFooterAlignment(align)}
+                        className={`py-1.5 px-2 rounded-lg border text-xs font-semibold flex items-center justify-center space-x-1 transition-colors ${
+                          footerAlignment === align
+                            ? 'bg-amber-50 border-amber-500 text-amber-900 shadow-2xs'
+                            : 'bg-white border-stone-200 text-stone-600 hover:bg-stone-50'
+                        }`}
+                      >
+                        {align === 'left' && <AlignLeft className="w-3 h-3" />}
+                        {align === 'center' && <AlignCenter className="w-3 h-3" />}
+                        {align === 'right' && <AlignRight className="w-3 h-3" />}
+                        <span className="capitalize">{align}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Footer Font Size */}
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-[10px] font-semibold text-stone-600">Font Size</span>
+                    <span className="text-[10px] font-mono font-bold text-stone-700">{footerFontSize} pt</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="8"
+                    max="14"
+                    step="0.5"
+                    value={footerFontSize}
+                    onChange={(e) => setFooterFontSize(Number(e.target.value))}
+                    className="w-full accent-amber-600 cursor-pointer"
+                  />
+                </div>
+
+                {/* Space from Bottom of Page */}
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-[10px] font-semibold text-stone-600">Space from Bottom</span>
+                    <span className="text-[10px] font-mono font-bold text-stone-700">{footerSpaceFromBottom} px</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="10"
+                    max="60"
+                    step="2"
+                    value={footerSpaceFromBottom}
+                    onChange={(e) => setFooterSpaceFromBottom(Number(e.target.value))}
+                    className="w-full accent-amber-600 cursor-pointer"
+                  />
+                </div>
+
+                {/* Space between Score and Footer */}
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-[10px] font-semibold text-stone-600">Space Above Footer</span>
+                    <span className="text-[10px] font-mono font-bold text-stone-700">{footerSpaceAbove} px</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="6"
+                    max="48"
+                    step="2"
+                    value={footerSpaceAbove}
+                    onChange={(e) => setFooterSpaceAbove(Number(e.target.value))}
+                    className="w-full accent-amber-600 cursor-pointer"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ================= PAGE NUMBERS ================= */}
+          <div className="space-y-3 bg-stone-50/80 p-3 rounded-xl border border-stone-200">
+            <div className="flex items-center justify-between">
+              <label className="font-bold text-stone-900 uppercase tracking-wider text-[11px] flex items-center space-x-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showPageNumber}
+                  onChange={(e) => setShowPageNumber(e.target.checked)}
+                  className="w-3.5 h-3.5 text-amber-600 rounded focus:ring-amber-500 accent-amber-600 cursor-pointer"
+                />
+                <span>Page Numbers</span>
+              </label>
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${showPageNumber ? 'bg-amber-100 text-amber-800' : 'bg-stone-200 text-stone-600'}`}>
+                {showPageNumber ? 'Enabled' : 'Disabled'}
+              </span>
+            </div>
+
+            {showPageNumber && (
+              <div className="space-y-2.5 pt-1">
+                {/* Position */}
+                <div>
+                  <span className="text-[10px] font-semibold text-stone-600 block mb-1">
+                    Position
+                  </span>
+                  <div className="grid grid-cols-3 gap-1">
+                    {(['left', 'center', 'right'] as const).map((pos) => (
+                      <button
+                        key={`page-num-pos-${pos}`}
+                        type="button"
+                        onClick={() => setPageNumberPosition(pos)}
+                        className={`py-1.5 px-2 rounded-lg border text-xs font-semibold flex items-center justify-center space-x-1 transition-colors ${
+                          pageNumberPosition === pos
+                            ? 'bg-amber-50 border-amber-500 text-amber-900 shadow-2xs'
+                            : 'bg-white border-stone-200 text-stone-600 hover:bg-stone-50'
+                        }`}
+                      >
+                        <span className="capitalize">{pos}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Format */}
+                <div>
+                  <span className="text-[10px] font-semibold text-stone-600 block mb-1">
+                    Format
+                  </span>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setPageNumberFormat('page')}
+                      className={`py-1.5 px-2 rounded-lg border text-xs font-semibold transition-colors ${
+                        pageNumberFormat === 'page'
+                          ? 'bg-amber-50 border-amber-500 text-amber-900 shadow-2xs'
+                          : 'bg-white border-stone-200 text-stone-600 hover:bg-stone-50'
+                      }`}
+                    >
+                      Page 1
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPageNumberFormat('pageOfTotal')}
+                      className={`py-1.5 px-2 rounded-lg border text-xs font-semibold transition-colors ${
+                        pageNumberFormat === 'pageOfTotal'
+                          ? 'bg-amber-50 border-amber-500 text-amber-900 shadow-2xs'
+                          : 'bg-white border-stone-200 text-stone-600 hover:bg-stone-50'
+                      }`}
+                    >
+                      1 / {totalPages}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </aside>
 
@@ -678,11 +1147,7 @@ export const PrintStudio: React.FC<PrintStudioProps> = ({ score, onBackToEditor 
                 onSelectBeat={() => {}}
                 onSelectMeasure={() => {}}
                 visiblePageIndices={visiblePageIndices}
-                onPageCountCalculated={(count) => {
-                  if (count > 0 && count !== totalPages) {
-                    setTotalPages(count);
-                  }
-                }}
+                onPageCountCalculated={handlePageCountCalculated}
               />
             </div>
           </div>

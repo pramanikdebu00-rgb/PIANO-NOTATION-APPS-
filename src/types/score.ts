@@ -234,10 +234,24 @@ export interface LayoutSettings {
   zoom: number; // 0.7 to 1.8
   keyboardLayout?: '61' | '76' | '88';
   showHeader?: boolean; // Independent toggle: Show header (defaults to true)
+  headerCustomText?: string;
+  headerAlignment?: 'left' | 'center' | 'right';
+  headerFontSize?: number;
+  headerSpaceFromTop?: number;
+  headerSpaceFromScore?: number;
+  headerSpaceBelow?: number;
   showFooter?: boolean; // Independent toggle: Show footer (optional, independent of header)
-  footerPageNumbering?: 'none' | 'simple' | 'page_of_total'; // 'simple' = 1, 2, 3... | 'page_of_total' = Page 1 of N
+  footerPageNumbering?: 'none' | 'simple' | 'page_of_total' | 'page' | 'pageOfTotal'; // 'simple' = 1, 2, 3... | 'page_of_total' = Page 1 of N
   footerCustomText?: string;
+  footerAlignment?: 'left' | 'center' | 'right';
+  footerFontSize?: number;
+  footerSpaceFromBottom?: number;
+  footerSpaceFromScore?: number;
+  footerSpaceAbove?: number;
+  showPageNumber?: boolean;
+  pageNumberPosition?: 'left' | 'center' | 'right';
   footerShowOnAllPages?: boolean;
+  footerIncludeTotalPages?: boolean;
 }
 
 export interface ScoreTextAnnotation {

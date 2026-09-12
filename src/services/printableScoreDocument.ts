@@ -26,7 +26,19 @@ export interface PrintableDocumentOptions {
   scaling?: number;
   keyboardLayout?: '61' | '76' | '88';
   showHeader?: boolean;
+  headerCustomText?: string;
+  headerAlignment?: 'left' | 'center' | 'right';
+  headerFontSize?: number;
+  headerSpaceFromTop?: number;
+  headerSpaceFromScore?: number;
   showFooter?: boolean;
+  footerCustomText?: string;
+  footerAlignment?: 'left' | 'center' | 'right';
+  footerFontSize?: number;
+  footerSpaceFromBottom?: number;
+  footerSpaceFromScore?: number;
+  showPageNumber?: boolean;
+  pageNumberPosition?: 'left' | 'center' | 'right';
   headerAdjustmentTop?: number;
   footerAdjustmentBottom?: number;
 }
@@ -114,7 +126,19 @@ export interface PrintablePage {
   staffMarginLeft: number;
   staffMarginRight: number;
   showHeader: boolean;
+  headerCustomText?: string;
+  headerAlignment?: 'left' | 'center' | 'right';
+  headerFontSize?: number;
+  headerSpaceFromTop?: number;
+  headerSpaceFromScore?: number;
   showFooter: boolean;
+  footerCustomText?: string;
+  footerAlignment?: 'left' | 'center' | 'right';
+  footerFontSize?: number;
+  footerSpaceFromBottom?: number;
+  footerSpaceFromScore?: number;
+  showPageNumber?: boolean;
+  pageNumberPosition?: 'left' | 'center' | 'right';
   runningHeaderTitle?: string;
   runningHeaderComposer?: string;
   systems: PrintableSystem[];
@@ -141,6 +165,7 @@ export interface PrintableScoreDocument {
   scaling: number;
   keyboardLayout: '61' | '76' | '88';
   totalPages: number;
+  copyright?: string;
   pages: PrintablePage[];
 }
 
@@ -220,9 +245,11 @@ export function buildPrintableScoreDocument(
   const handTemplate = score.metadata.handTemplate || 'Both';
   const pickupBeat = score.metadata.pickupBeat || 1;
 
-  const title = score.metadata.title || 'Untitled Notation';
+  const title = (score.metadata.title && score.metadata.title.trim().length > 0)
+    ? score.metadata.title
+    : 'Untitled Composition';
   const subtitle = score.metadata.subtitle || '';
-  const composer = score.metadata.composer || 'Pianotastic Academy';
+  const composer = score.metadata.composer || '';
   const lyricist = score.metadata.lyricist || '';
   const initialTimeSignatureRaw = score.metadata.initialTimeSignature || '4/4';
   const initialTimeSignature =
@@ -384,9 +411,28 @@ export function buildPrintableScoreDocument(
   // Normalized voltas from score
   const normalizedVoltas = getNormalizedVoltas(score);
 
+  // Dynamic Header & Footer calculations
+  const showHeader = options?.showHeader ?? (score.layoutSettings.showHeader !== false);
+  const headerCustomText = options?.headerCustomText !== undefined ? options.headerCustomText : score.layoutSettings.headerCustomText;
+  const headerAlignment = options?.headerAlignment || score.layoutSettings.headerAlignment || 'center';
+  const headerFontSize = options?.headerFontSize || score.layoutSettings.headerFontSize || 26;
+  const headerSpaceFromTop = options?.headerSpaceFromTop ?? score.layoutSettings.headerSpaceFromTop ?? 40;
+  const headerSpaceFromScore = options?.headerSpaceFromScore ?? score.layoutSettings.headerSpaceFromScore ?? 25;
+
+  const showFooter = options?.showFooter ?? (score.layoutSettings.showFooter !== false);
+  const footerCustomText = options?.footerCustomText !== undefined ? options.footerCustomText : score.layoutSettings.footerCustomText;
+  const footerAlignment = options?.footerAlignment || score.layoutSettings.footerAlignment || 'left';
+  const footerFontSize = options?.footerFontSize || score.layoutSettings.footerFontSize || 10;
+  const footerSpaceFromBottom = options?.footerSpaceFromBottom ?? score.layoutSettings.footerSpaceFromBottom ?? 25;
+  const footerSpaceFromScore = options?.footerSpaceFromScore ?? score.layoutSettings.footerSpaceFromScore ?? 16;
+  const showPageNumber = options?.showPageNumber ?? (score.layoutSettings.showPageNumber !== false && score.layoutSettings.footerPageNumbering !== 'none');
+  const pageNumberPosition = options?.pageNumberPosition || score.layoutSettings.pageNumberPosition || 'right';
+
   // Group systems into pages
   const pageMarginBottom = Math.max(28, margins.bottom);
-  const footerReservedHeight = 44;
+  const footerReservedHeight = (showFooter || showPageNumber)
+    ? (footerSpaceFromBottom + footerFontSize + footerSpaceFromScore)
+    : 0;
   const bottomPrintableMargin = pageHeight - pageMarginBottom - footerReservedHeight;
 
   const getSystemExtraSpace = (sys: typeof sysRawList[0], globalSysIdx: number) => {
@@ -398,11 +444,20 @@ export function buildPrintableScoreDocument(
     return match.reduce((sum, s) => sum + (s.amount || 0), 0);
   };
 
+  // Page 1 always reserves space for the canonical Score Header (Title, Subtitle, Tempo, Time Signature, Composer, Lyricist)
+  const computedFirstPageStartY = Math.round(
+    (margins.top || 36) * 0.75 +
+    (score.metadata.subtitle ? 58 : 42) +
+    28 +
+    Math.max(16, headerSpaceFromScore)
+  );
+  const computedSubsequentPageStartY = showHeader
+    ? (Math.max(28, headerSpaceFromTop * 0.75) + 16 + Math.min(24, headerSpaceFromScore))
+    : (margins.top || 36);
+
   const rawPages: { systems: typeof sysRawList; startY: number }[] = [];
   let curPageSystems: typeof sysRawList = [];
-  const firstPageStartY = 145;
-  const subsequentPageStartY = 50;
-  let currentY = firstPageStartY;
+  let currentY = computedFirstPageStartY;
 
   sysRawList.forEach((sys, sysIdx) => {
     const extraSpace = getSystemExtraSpace(sys, sysIdx);
@@ -417,10 +472,10 @@ export function buildPrintableScoreDocument(
     if (curPageSystems.length > 0 && (wouldOverflowPage || prevHadPageBreak)) {
       rawPages.push({
         systems: curPageSystems,
-        startY: rawPages.length === 0 ? firstPageStartY : subsequentPageStartY,
+        startY: rawPages.length === 0 ? computedFirstPageStartY : computedSubsequentPageStartY,
       });
       curPageSystems = [];
-      currentY = subsequentPageStartY;
+      currentY = computedSubsequentPageStartY;
     }
 
     curPageSystems.push(sys);
@@ -430,12 +485,12 @@ export function buildPrintableScoreDocument(
   if (curPageSystems.length > 0) {
     rawPages.push({
       systems: curPageSystems,
-      startY: rawPages.length === 0 ? firstPageStartY : subsequentPageStartY,
+      startY: rawPages.length === 0 ? computedFirstPageStartY : computedSubsequentPageStartY,
     });
   }
 
   if (rawPages.length === 0) {
-    rawPages.push({ systems: [], startY: firstPageStartY });
+    rawPages.push({ systems: [], startY: computedFirstPageStartY });
   }
 
   // Canonical text objects resolution
@@ -692,8 +747,20 @@ export function buildPrintableScoreDocument(
       pageHeight,
       staffMarginLeft,
       staffMarginRight,
-      showHeader: isFirstPage && (options?.showHeader ?? score.layoutSettings.showHeader !== false),
-      showFooter: options?.showFooter ?? score.layoutSettings.showFooter !== false,
+      showHeader: isFirstPage && showHeader,
+      headerCustomText,
+      headerAlignment,
+      headerFontSize,
+      headerSpaceFromTop,
+      headerSpaceFromScore,
+      showFooter,
+      footerCustomText,
+      footerAlignment,
+      footerFontSize,
+      footerSpaceFromBottom,
+      footerSpaceFromScore,
+      showPageNumber,
+      pageNumberPosition,
       runningHeaderTitle: title,
       runningHeaderComposer: composer,
       systems: printableSystems,
@@ -721,6 +788,7 @@ export function buildPrintableScoreDocument(
     scaling,
     keyboardLayout,
     totalPages,
+    copyright: cleanTextValue(score.metadata.copyright),
     pages,
   };
 }

@@ -3000,6 +3000,7 @@ export default function App() {
       <PrintStudio
         score={score}
         onBackToEditor={() => setViewMode('editor')}
+        onUpdateScore={setScore}
       />
     );
   }

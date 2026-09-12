@@ -8,26 +8,59 @@
 }
 
 @media print {
-  body {
+  @page {
+    margin: 0;
+    size: auto;
+  }
+
+  html, body {
     background: #ffffff !important;
     padding: 0 !important;
     margin: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
   }
 
+  /* Hide app navigation, sidebars, toolbars and non-printable UI elements */
   #app-header,
   #main-toolbar,
   #left-tool-palette,
   #properties-panel,
   #bottom-playback-bar,
-  #virtual-piano-panel {
+  #virtual-piano-panel,
+  .print-studio-sidebar,
+  .print-studio-topbar,
+  .print-studio-thumbnails,
+  .print-studio-bottombar,
+  .print-preview-badge,
+  .group\/page > div:first-child {
     display: none !important;
+  }
+
+  #print-sheet-paper {
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    display: block !important;
+  }
+
+  #notation-canvas-container {
+    padding: 0 !important;
+    margin: 0 !important;
+    transform: none !important;
+    min-height: auto !important;
   }
 
   .score-page {
     box-shadow: none !important;
     border: none !important;
-    margin: 0 !important;
-    page-break-after: always;
-    break-after: page;
+    margin: 0 auto !important;
+    page-break-after: always !important;
+    break-after: page !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    display: block !important;
   }
 }

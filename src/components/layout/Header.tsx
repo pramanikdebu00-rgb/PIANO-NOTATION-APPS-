@@ -122,6 +122,11 @@ export const Header: React.FC<HeaderProps> = ({
 
   const menuBarRef = React.useRef<HTMLDivElement>(null);
 
+  // Synchronize title input whenever score.metadata.title updates externally
+  React.useEffect(() => {
+    setTitleValue(score.metadata.title);
+  }, [score.metadata.title]);
+
   // Close open menu on outside click or Escape
   React.useEffect(() => {
     if (!activeMenu) return;

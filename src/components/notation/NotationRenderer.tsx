@@ -159,6 +159,8 @@ export const NotationRenderer: React.FC<NotationRendererProps> = ({
 
   const staffMarginLeft = score.layoutSettings.pageMargins?.left ?? 44;
   const staffMarginRight = score.layoutSettings.pageMargins?.right ?? 44;
+  const staffMarginTop = score.layoutSettings.pageMargins?.top ?? 36;
+  const staffMarginBottom = score.layoutSettings.pageMargins?.bottom ?? 36;
   const contentWidth = Math.max(300, pageWidth - staffMarginLeft - staffMarginRight);
 
   const measureBlockHeight = 136;
@@ -329,10 +331,42 @@ export const NotationRenderer: React.FC<NotationRendererProps> = ({
   // Normalized voltas from score
   const voltas = useMemo(() => getNormalizedVoltas(score), [score]);
 
+  // Dynamic Header & Footer calculations
+  const showHeader = score.layoutSettings.showHeader !== false;
+  const headerCustomText = score.layoutSettings.headerCustomText;
+  const headerAlignment = score.layoutSettings.headerAlignment || 'center';
+  const headerFontSize = score.layoutSettings.headerFontSize ?? 26;
+  const headerSpaceFromTop = score.layoutSettings.headerSpaceFromTop ?? 40;
+  const headerSpaceFromScore = score.layoutSettings.headerSpaceFromScore ?? 25;
+
+  const showFooter = score.layoutSettings.showFooter !== false;
+  const footerCustomText = score.layoutSettings.footerCustomText;
+  const footerAlignment = score.layoutSettings.footerAlignment || 'left';
+  const footerFontSize = score.layoutSettings.footerFontSize ?? 10;
+  const footerSpaceFromBottom = score.layoutSettings.footerSpaceFromBottom ?? 25;
+  const footerSpaceFromScore = score.layoutSettings.footerSpaceFromScore ?? 16;
+  const showPageNumber = score.layoutSettings.showPageNumber !== false && score.layoutSettings.footerPageNumbering !== 'none';
+  const pageNumberPosition = score.layoutSettings.pageNumberPosition || 'right';
+
+  const footerReservedHeight = (showFooter || showPageNumber)
+    ? (footerSpaceFromBottom + footerFontSize + footerSpaceFromScore)
+    : 0;
+
   // Page margin bottom and footer reservation calculation
-  const pageMarginBottom = Math.max(28, score.layoutSettings.pageMargins?.bottom ?? 36);
-  const footerReservedHeight = 44;
-  const bottomPrintableMargin = pageHeight - pageMarginBottom - footerReservedHeight;
+  const pageMarginBottom = Math.max(16, score.layoutSettings.pageMargins?.bottom ?? 36);
+  const bottomPrintableMargin = pageHeight - Math.max(pageMarginBottom, footerReservedHeight);
+
+  // Dynamic start Y positions
+  // Page 1 always reserves space for the canonical Score Header (Title, Subtitle, Tempo, Time Signature, Composer, Lyricist)
+  const computedFirstPageStartY = Math.round(
+    staffMarginTop * 0.75 +
+    (score.metadata.subtitle ? 58 : 42) +
+    28 +
+    Math.max(16, headerSpaceFromScore)
+  );
+  const computedSubsequentPageStartY = showHeader
+    ? Math.round(Math.max(24, headerSpaceFromTop * 0.7) + 16 + Math.min(24, headerSpaceFromScore))
+    : Math.max(24, score.layoutSettings.pageMargins?.top ?? 36);
 
   // Helper to retrieve extra vertical spacing defined by Space Tool
   const getSystemExtraSpace = (sys: typeof systems[0], globalSysIdx: number) => {
@@ -344,13 +378,11 @@ export const NotationRenderer: React.FC<NotationRendererProps> = ({
     return match.reduce((sum, s) => sum + (s.amount || 0), 0);
   };
 
-  // Group systems into exact A4 pages based on vertical height
+  // Group systems into exact pages based on vertical height
   const pages = useMemo(() => {
     const pageList: { systems: typeof systems; startY: number }[] = [];
     let curPageSystems: typeof systems = [];
-    const firstPageStartY = 145;
-    const subsequentPageStartY = 50;
-    let currentY = firstPageStartY;
+    let currentY = computedFirstPageStartY;
 
     systems.forEach((sys, sysIdx) => {
       const extraSpace = getSystemExtraSpace(sys, sysIdx);
@@ -360,16 +392,16 @@ export const NotationRenderer: React.FC<NotationRendererProps> = ({
         ? prevSystem.measures.some((m) => m.measure.pageBreak)
         : false;
 
-      // Check if adding this system would overflow the printable height of the A4 page
+      // Check if adding this system would overflow the printable height of the page
       const wouldOverflowPage = currentY + sysSpan > bottomPrintableMargin;
 
       if (curPageSystems.length > 0 && (wouldOverflowPage || prevHadPageBreak)) {
         pageList.push({
           systems: curPageSystems,
-          startY: pageList.length === 0 ? firstPageStartY : subsequentPageStartY,
+          startY: pageList.length === 0 ? computedFirstPageStartY : computedSubsequentPageStartY,
         });
         curPageSystems = [];
-        currentY = subsequentPageStartY;
+        currentY = computedSubsequentPageStartY;
       }
 
       curPageSystems.push(sys);
@@ -379,18 +411,21 @@ export const NotationRenderer: React.FC<NotationRendererProps> = ({
     if (curPageSystems.length > 0) {
       pageList.push({
         systems: curPageSystems,
-        startY: pageList.length === 0 ? firstPageStartY : subsequentPageStartY,
+        startY: pageList.length === 0 ? computedFirstPageStartY : computedSubsequentPageStartY,
       });
     }
 
     return pageList.length > 0
       ? pageList
-      : [{ systems: [], startY: firstPageStartY }];
-  }, [systems, measureBlockHeight, systemGap, bottomPrintableMargin, score.spacingObjects]);
+      : [{ systems: [], startY: computedFirstPageStartY }];
+  }, [systems, measureBlockHeight, systemGap, bottomPrintableMargin, computedFirstPageStartY, computedSubsequentPageStartY, score.spacingObjects]);
+
+  const onPageCountRef = useRef(onPageCountCalculated);
+  onPageCountRef.current = onPageCountCalculated;
 
   React.useEffect(() => {
-    onPageCountCalculated?.(pages.length);
-  }, [pages.length, onPageCountCalculated]);
+    onPageCountRef.current?.(pages.length);
+  }, [pages.length]);
 
   // Compute canonical page-level text objects, resolving legacy measure-bound annotations to page coordinates
   const canonicalTextObjects = useMemo(() => {
@@ -468,7 +503,7 @@ export const NotationRenderer: React.FC<NotationRendererProps> = ({
             className="flex flex-col items-center group/page"
           >
             {/* Page number badge indicator */}
-            <div className="mb-2 px-3 py-0.5 rounded-full bg-stone-300/80 text-stone-700 text-[11px] font-medium tracking-wide flex items-center space-x-1.5 shadow-xs">
+            <div className="mb-2 px-3 py-0.5 rounded-full bg-stone-300/80 text-stone-700 text-[11px] font-medium tracking-wide flex items-center space-x-1.5 shadow-xs print:hidden print-preview-badge">
               <span>Page {pageIndex + 1}</span>
               <span className="text-stone-400">•</span>
               <span className="uppercase text-[10px] text-stone-500 font-semibold">{isLandscape ? 'A4 Landscape' : 'A4 Portrait'}</span>
@@ -526,123 +561,189 @@ export const NotationRenderer: React.FC<NotationRendererProps> = ({
                 }}
               >
                 {/* Score Running Header on subsequent pages */}
-                {pageIndex > 0 && (
+                {pageIndex > 0 && showHeader && (
                   <g className="score-running-header">
                     <text
-                      x={staffMarginLeft}
-                      y={28}
+                      x={
+                        headerAlignment === 'left'
+                          ? staffMarginLeft
+                          : headerAlignment === 'right'
+                          ? pageWidth - staffMarginRight
+                          : staffMarginLeft
+                      }
+                      y={Math.max(16, Math.round(headerSpaceFromTop * 0.65))}
                       fontFamily="'Plus Jakarta Sans', sans-serif"
                       fontSize="10"
                       fill="#64748b"
+                      textAnchor={
+                        headerAlignment === 'right' ? 'end' : 'start'
+                      }
                     >
-                      {score.metadata.title || 'Untitled Notation'}
+                      {(headerCustomText && headerCustomText.trim().length > 0)
+                        ? headerCustomText.trim()
+                        : (score.metadata.title || 'Untitled Composition')}
                     </text>
-                    <text
-                      x={pageWidth - staffMarginRight}
-                      y={28}
-                      fontFamily="'Plus Jakarta Sans', sans-serif"
-                      fontSize="10"
-                      fill="#64748b"
-                      textAnchor="end"
-                    >
-                      {score.metadata.composer || ''}
-                    </text>
-                    <line
-                      x1={staffMarginLeft}
-                      y1={34}
-                      x2={pageWidth - staffMarginRight}
-                      y2={34}
-                      stroke="#f1f5f9"
-                      strokeWidth="1"
-                    />
-                  </g>
-                )}
-
-                {/* Score Header on First Page */}
-                {pageIndex === 0 && score.layoutSettings.showHeader !== false && (
-                  <g className="score-header">
-                    {/* Score Title */}
-                    <text
-                      x={pageWidth / 2}
-                      y={56}
-                      fontFamily="'Lora', Georgia, serif"
-                      fontSize="26"
-                      fontWeight="bold"
-                      fill="#0f172a"
-                      textAnchor="middle"
-                    >
-                      {score.metadata.title || 'Untitled Notation'}
-                    </text>
-
-                  {/* Subtitle */}
-                  {score.metadata.subtitle && (
-                    <text
-                      x={pageWidth / 2}
-                      y={82}
-                      fontFamily="'Lora', Georgia, serif"
-                      fontSize="14"
-                      fontStyle="italic"
-                      fill="#475569"
-                      textAnchor="middle"
-                    >
-                      {score.metadata.subtitle}
-                    </text>
-                  )}
-
-                  {/* Tempo & Time Signature + Taal Label (Top Left) */}
-                  <g>
-                    <text
-                      x={staffMarginLeft}
-                      y={118}
-                      fontFamily="'Plus Jakarta Sans', sans-serif"
-                      fontSize="12"
-                      fontWeight="bold"
-                      fill="#0f172a"
-                    >
-                      ♩ = {score.metadata.tempoBpm || 80}
-                    </text>
-                    <text
-                      x={staffMarginLeft}
-                      y={134}
-                      fontFamily="'Plus Jakarta Sans', sans-serif"
-                      fontSize="11"
-                      fontWeight="600"
-                      fill="#475569"
-                    >
-                      {formatTimeSignatureWithTaal(
-                        score.metadata.initialTimeSignature,
-                        score.metadata.indianTaal
-                      )}
-                    </text>
-                  </g>
-
-                  {/* Composer & Lyricist (Top Right) */}
-                  <g textAnchor="end">
-                    <text
-                      x={pageWidth - staffMarginRight}
-                      y={118}
-                      fontFamily="'Lora', Georgia, serif"
-                      fontSize="12"
-                      fontWeight="600"
-                      fill="#1e293b"
-                    >
-                      {score.metadata.composer || 'Pianotastic Academy'}
-                    </text>
-                    {score.metadata.lyricist && (
+                    {score.metadata.composer && headerAlignment !== 'right' && (
                       <text
                         x={pageWidth - staffMarginRight}
-                        y={132}
-                        fontFamily="'Lora', Georgia, serif"
+                        y={Math.max(16, Math.round(headerSpaceFromTop * 0.65))}
+                        fontFamily="'Plus Jakarta Sans', sans-serif"
                         fontSize="10"
-                        fontStyle="italic"
                         fill="#64748b"
+                        textAnchor="end"
                       >
-                        Lyrics: {score.metadata.lyricist}
+                        {score.metadata.composer}
                       </text>
                     )}
                   </g>
-                </g>
-              )}
+                )}
+
+                {/* Score Header on First Page - Always rendered so Song Title & Info are never lost */}
+                {pageIndex === 0 && (
+                  <g className="score-header score-header-first-page">
+                    {/* Score Title */}
+                    <text
+                      x={
+                        headerAlignment === 'left'
+                          ? staffMarginLeft
+                          : headerAlignment === 'right'
+                          ? pageWidth - staffMarginRight
+                          : pageWidth / 2
+                      }
+                      y={Math.round(staffMarginTop * 0.75 + 18)}
+                      fontFamily="'Lora', Georgia, serif"
+                      fontSize="24"
+                      fontWeight="bold"
+                      fill="#0f172a"
+                      textAnchor={
+                        headerAlignment === 'left'
+                          ? 'start'
+                          : headerAlignment === 'right'
+                          ? 'end'
+                          : 'middle'
+                      }
+                    >
+                      {score.metadata.title || 'Untitled Composition'}
+                    </text>
+
+                    {/* Subtitle */}
+                    {score.metadata.subtitle && (
+                      <text
+                        x={
+                          headerAlignment === 'left'
+                            ? staffMarginLeft
+                            : headerAlignment === 'right'
+                            ? pageWidth - staffMarginRight
+                            : pageWidth / 2
+                        }
+                        y={Math.round(staffMarginTop * 0.75 + 40)}
+                        fontFamily="'Lora', Georgia, serif"
+                        fontSize="13"
+                        fontStyle="italic"
+                        fill="#475569"
+                        textAnchor={
+                          headerAlignment === 'left'
+                            ? 'start'
+                            : headerAlignment === 'right'
+                            ? 'end'
+                            : 'middle'
+                        }
+                      >
+                        {score.metadata.subtitle}
+                      </text>
+                    )}
+
+                    {/* Tempo & Time Signature + Taal Label (Top Left) */}
+                    {(() => {
+                      const tempoY = Math.round(staffMarginTop * 0.75 + (score.metadata.subtitle ? 58 : 42));
+                      return (
+                        <g className="score-tempo-and-timesig">
+                          {/* Vector Quarter Note (Crotchet) Musical Symbol */}
+                          <g className="tempo-marking">
+                            {/* Slanted oval notehead */}
+                            <ellipse
+                              cx={staffMarginLeft + 4.5}
+                              cy={tempoY - 3.5}
+                              rx="4.2"
+                              ry="3.1"
+                              transform={`rotate(-20 ${staffMarginLeft + 4.5} ${tempoY - 3.5})`}
+                              fill="#0f172a"
+                            />
+                            {/* Crisp vertical stem pointing up */}
+                            <line
+                              x1={staffMarginLeft + 7.8}
+                              y1={tempoY - 3.5}
+                              x2={staffMarginLeft + 7.8}
+                              y2={tempoY - 15.5}
+                              stroke="#0f172a"
+                              strokeWidth="1.4"
+                              strokeLinecap="round"
+                            />
+                            {/* Text: = 80 BPM */}
+                            <text
+                              x={staffMarginLeft + 13}
+                              y={tempoY}
+                              fontFamily="'Plus Jakarta Sans', sans-serif"
+                              fontSize="12"
+                              fontWeight="bold"
+                              fill="#0f172a"
+                            >
+                              = {score.metadata.tempoBpm || 80} BPM
+                            </text>
+                          </g>
+
+                          {/* Time Signature & Taal */}
+                          <text
+                            x={staffMarginLeft}
+                            y={tempoY + 18}
+                            fontFamily="'Plus Jakarta Sans', sans-serif"
+                            fontSize="11"
+                            fontWeight="600"
+                            fill="#475569"
+                          >
+                            {formatTimeSignatureWithTaal(
+                              score.metadata.initialTimeSignature,
+                              score.metadata.indianTaal
+                            )}
+                          </text>
+                        </g>
+                      );
+                    })()}
+
+                    {/* Composer & Lyricist (Top Right) */}
+                    {(() => {
+                      const tempoY = Math.round(staffMarginTop * 0.75 + (score.metadata.subtitle ? 58 : 42));
+                      return (
+                        <g textAnchor="end">
+                          {score.metadata.composer && (
+                            <text
+                              x={pageWidth - staffMarginRight}
+                              y={tempoY}
+                              fontFamily="'Lora', Georgia, serif"
+                              fontSize="12"
+                              fontWeight="600"
+                              fill="#1e293b"
+                            >
+                              {score.metadata.composer}
+                            </text>
+                          )}
+                          {score.metadata.lyricist && (
+                            <text
+                              x={pageWidth - staffMarginRight}
+                              y={tempoY + (score.metadata.composer ? 16 : 0)}
+                              fontFamily="'Lora', Georgia, serif"
+                              fontSize="10"
+                              fontStyle="italic"
+                              fill="#64748b"
+                            >
+                              Lyrics: {score.metadata.lyricist}
+                            </text>
+                          )}
+                        </g>
+                      );
+                    })()}
+                  </g>
+                )}
 
               {/* Render Systems / Lines */}
               {(() => {
@@ -1310,45 +1411,105 @@ export const NotationRenderer: React.FC<NotationRendererProps> = ({
                                               >
                                                 {isRestDot ? '.' : (count > 1 ? '.' : '—')}
                                               </text>
-                                            ) : (
-                                              <text
-                                                x={noteX}
-                                                y={systemY + 84}
-                                                fontFamily="'Plus Jakarta Sans', sans-serif"
-                                                fontSize={count > 2 ? '14' : count === 2 ? '17' : '18'}
-                                                fontWeight="bold"
-                                                fill={isSubBeatActive ? '#b45309' : '#000000'}
-                                                textAnchor="middle"
-                                              >
-                                                <tspan>{p?.step}</tspan>
-                                                {p?.accidental && p.accidental !== 'natural' && (
-                                                  <tspan
-                                                    fontSize={count > 2 ? '10' : count === 2 ? '12' : '13'}
-                                                    dy={-3}
-                                                    dx={0.5}
-                                                    fontWeight="semibold"
-                                                    fontFamily="'Plus Jakarta Sans', 'Noto Music', 'Segoe UI Symbol', sans-serif"
+                                            ) : (() => {
+                                              const hasAcc = Boolean(p?.accidental && p.accidental !== 'natural');
+                                              const dispOct = p ? String(getDisplayOctave(p.octave ?? (handTemplate === 'LH' ? 3 : 4), keyboardLayout)) : '';
+                                              const letterSize = count > 2 ? 14 : count === 2 ? 17 : 18;
+                                              const octSize = count > 2 ? 9 : count === 2 ? 11 : 12;
+                                              const accScale = count > 2 ? 0.75 : count === 2 ? 0.9 : 1.0;
+
+                                              const letterW = letterSize * 0.58;
+                                              const accW = hasAcc ? 8 * accScale : 0;
+                                              const octW = 6.5 * (octSize / 11);
+                                              const totalClusterW = letterW + accW + octW;
+
+                                              const startX = noteX - totalClusterW / 2;
+                                              const letterX = startX + letterW / 2;
+                                              const accX = startX + letterW + accW / 2;
+                                              const octX = startX + letterW + accW + octW / 2;
+                                              const mainColor = isSubBeatActive ? '#b45309' : '#0f172a';
+
+                                              return (
+                                                <g className="note-cluster-vector">
+                                                  {/* Note Letter */}
+                                                  <text
+                                                    x={letterX}
+                                                    y={systemY + 84}
+                                                    fontFamily="'Plus Jakarta Sans', sans-serif"
+                                                    fontSize={letterSize}
+                                                    fontWeight="bold"
+                                                    fill={mainColor}
+                                                    textAnchor="middle"
                                                   >
-                                                    {getAccidentalGlyph(p.accidental)}
-                                                  </tspan>
-                                                )}
-                                                <tspan
-                                                  fontSize={count > 2 ? '9' : count === 2 ? '11' : '12'}
-                                                  dy={p?.accidental && p.accidental !== 'natural' ? -2 : -5}
-                                                  dx={0.5}
-                                                  fontWeight="bold"
-                                                  fill={isSubBeatActive ? '#92400e' : '#1e293b'}
-                                                  fontFamily="'Plus Jakarta Sans', sans-serif"
-                                                >
-                                                  {getSuperscriptOctave(
-                                                    getDisplayOctave(
-                                                      p?.octave ?? (handTemplate === 'LH' ? 3 : 4),
-                                                      keyboardLayout
+                                                    {p?.step}
+                                                  </text>
+
+                                                  {/* Vector Accidental */}
+                                                  {hasAcc && (
+                                                    p?.accidental === 'flat' ? (
+                                                      <g stroke={mainColor} fill={mainColor}>
+                                                        <line
+                                                          x1={accX - 2.5 * accScale}
+                                                          y1={systemY + 73}
+                                                          x2={accX - 2.5 * accScale}
+                                                          y2={systemY + 84.5}
+                                                          strokeWidth={1.0 * accScale}
+                                                          strokeLinecap="round"
+                                                        />
+                                                        <path
+                                                          d={`M ${accX - 2.5 * accScale} ${systemY + 78.5} C ${accX + 3.5 * accScale} ${systemY + 76.5} ${accX + 3.5 * accScale} ${systemY + 83.5} ${accX - 2.5 * accScale} ${systemY + 84.5} Z`}
+                                                          strokeWidth={0.5 * accScale}
+                                                        />
+                                                      </g>
+                                                    ) : (
+                                                      <g stroke={mainColor} strokeLinecap="round">
+                                                        <line
+                                                          x1={accX - 2.2 * accScale}
+                                                          y1={systemY + 75}
+                                                          x2={accX - 2.2 * accScale}
+                                                          y2={systemY + 86}
+                                                          strokeWidth={0.9 * accScale}
+                                                        />
+                                                        <line
+                                                          x1={accX + 2.2 * accScale}
+                                                          y1={systemY + 74}
+                                                          x2={accX + 2.2 * accScale}
+                                                          y2={systemY + 85}
+                                                          strokeWidth={0.9 * accScale}
+                                                        />
+                                                        <line
+                                                          x1={accX - 4.5 * accScale}
+                                                          y1={systemY + 82}
+                                                          x2={accX + 4.5 * accScale}
+                                                          y2={systemY + 80}
+                                                          strokeWidth={1.3 * accScale}
+                                                        />
+                                                        <line
+                                                          x1={accX - 4.5 * accScale}
+                                                          y1={systemY + 78.5}
+                                                          x2={accX + 4.5 * accScale}
+                                                          y2={systemY + 76.5}
+                                                          strokeWidth={1.3 * accScale}
+                                                        />
+                                                      </g>
                                                     )
                                                   )}
-                                                </tspan>
-                                              </text>
-                                            )}
+
+                                                  {/* Superscript Octave ASCII Digit */}
+                                                  <text
+                                                    x={octX}
+                                                    y={systemY + 76}
+                                                    fontFamily="'Plus Jakarta Sans', sans-serif"
+                                                    fontSize={octSize}
+                                                    fontWeight="bold"
+                                                    fill={isSubBeatActive ? '#92400e' : '#1e293b'}
+                                                    textAnchor="middle"
+                                                  >
+                                                    {dispOct}
+                                                  </text>
+                                                </g>
+                                              );
+                                            })()}
                                           </g>
                                         );
                                       })}
@@ -1385,30 +1546,46 @@ export const NotationRenderer: React.FC<NotationRendererProps> = ({
                                     className="hover:fill-purple-500/10"
                                   />
                                   {symbols.length > 0 ? (
-                                    <text
-                                      x={colCenterX}
-                                      y={systemY + 114}
-                                      fontFamily="'Plus Jakarta Sans', sans-serif"
-                                      fontSize="17"
-                                      fontWeight="bold"
-                                      fill="#6b21a8"
-                                      textAnchor="middle"
-                                    >
-                                      {symbols.join(' ')}
-                                    </text>
+                                    <g>
+                                      {symbols.map((sym, sIdx) => {
+                                        if (sym === '⌣') {
+                                          return (
+                                            <path
+                                              key={`sym-${sIdx}`}
+                                              d={`M ${colCenterX - 7} ${systemY + 107} Q ${colCenterX} ${systemY + 115} ${colCenterX + 7} ${systemY + 107}`}
+                                              stroke="#6b21a8"
+                                              strokeWidth="1.8"
+                                              fill="none"
+                                              strokeLinecap="round"
+                                            />
+                                          );
+                                        }
+                                        return (
+                                          <text
+                                            key={`sym-${sIdx}`}
+                                            x={colCenterX}
+                                            y={systemY + 114}
+                                            fontFamily="'Plus Jakarta Sans', sans-serif"
+                                            fontSize="17"
+                                            fontWeight="bold"
+                                            fill="#6b21a8"
+                                            textAnchor="middle"
+                                          >
+                                            {sym}
+                                          </text>
+                                        );
+                                      })}
+                                    </g>
                                   ) : (
                                     !isPrintView && !isLocked && (
-                                      <text
-                                        x={colCenterX}
-                                        y={systemY + 112}
-                                        fontFamily="'Plus Jakarta Sans', sans-serif"
-                                        fontSize="14"
-                                        fill="#d8b4fe"
-                                        textAnchor="middle"
+                                      <path
+                                        d={`M ${colCenterX - 6} ${systemY + 108} Q ${colCenterX} ${systemY + 114} ${colCenterX + 6} ${systemY + 108}`}
+                                        stroke="#d8b4fe"
+                                        strokeWidth="1.4"
+                                        fill="none"
+                                        strokeLinecap="round"
                                         className="opacity-0 group-hover/symbol:opacity-100 transition-opacity"
-                                      >
-                                        ⌣
-                                      </text>
+                                      />
                                     )
                                   )}
                                 </g>
@@ -1634,50 +1811,58 @@ export const NotationRenderer: React.FC<NotationRendererProps> = ({
               })()}
 
               {/* Canonical Score Page Footer (Separate and independent from Header) */}
-              {(score.layoutSettings.showFooter ?? true) && (score.layoutSettings.footerShowOnAllPages !== false || pageIndex > 0) && (
+              {((showFooter && (score.layoutSettings.footerShowOnAllPages !== false || pageIndex > 0)) || showPageNumber) && (
                 <g className="score-footer score-page-footer">
-                  <line
-                    x1={staffMarginLeft}
-                    y1={pageHeight - pageMarginBottom + 8}
-                    x2={pageWidth - staffMarginRight}
-                    y2={pageHeight - pageMarginBottom + 8}
-                    stroke="#cbd5e1"
-                    strokeWidth="1"
-                  />
-                  <text
-                    x={staffMarginLeft}
-                    y={pageHeight - Math.max(10, pageMarginBottom * 0.35)}
-                    fontFamily="'Plus Jakarta Sans', sans-serif"
-                    fontSize="10"
-                    fontWeight="500"
-                    fill="#475569"
-                  >
-                    {score.layoutSettings.footerCustomText !== undefined
-                      ? score.layoutSettings.footerCustomText
-                      : score.metadata.copyright || '© Pianotastic Academy'}
-                  </text>
-                  <text
-                    x={pageWidth / 2}
-                    y={pageHeight - Math.max(10, pageMarginBottom * 0.35)}
-                    fontFamily="'Plus Jakarta Sans', sans-serif"
-                    fontSize="9.5"
-                    fontWeight="600"
-                    fill="#64748b"
-                    textAnchor="middle"
-                  >
-                    Pianotastic Sheet Music
-                  </text>
-                  {score.layoutSettings.footerPageNumbering !== 'none' && (
+                  {showFooter && (footerCustomText !== undefined ? footerCustomText : score.metadata.copyright) && (
                     <text
-                      x={pageWidth - staffMarginRight}
-                      y={pageHeight - Math.max(10, pageMarginBottom * 0.35)}
+                      x={
+                        footerAlignment === 'left'
+                          ? staffMarginLeft
+                          : footerAlignment === 'right'
+                          ? pageWidth - staffMarginRight
+                          : pageWidth / 2
+                      }
+                      y={pageHeight - footerSpaceFromBottom}
                       fontFamily="'Plus Jakarta Sans', sans-serif"
-                      fontSize="10"
-                      fontWeight="600"
-                      fill="#334155"
-                      textAnchor="end"
+                      fontSize={footerFontSize}
+                      fontWeight="500"
+                      fill="#64748b"
+                      textAnchor={
+                        footerAlignment === 'left'
+                          ? 'start'
+                          : footerAlignment === 'right'
+                          ? 'end'
+                          : 'middle'
+                      }
                     >
-                      {pageIndex + 1}
+                      {footerCustomText !== undefined ? footerCustomText : score.metadata.copyright}
+                    </text>
+                  )}
+                  {showPageNumber && (
+                    <text
+                      x={
+                        pageNumberPosition === 'left'
+                          ? staffMarginLeft
+                          : pageNumberPosition === 'center'
+                          ? pageWidth / 2
+                          : pageWidth - staffMarginRight
+                      }
+                      y={pageHeight - footerSpaceFromBottom}
+                      fontFamily="'Plus Jakarta Sans', sans-serif"
+                      fontSize={footerFontSize}
+                      fontWeight="600"
+                      fill="#475569"
+                      textAnchor={
+                        pageNumberPosition === 'left'
+                          ? 'start'
+                          : pageNumberPosition === 'center'
+                          ? 'middle'
+                          : 'end'
+                      }
+                    >
+                      {score.layoutSettings.footerIncludeTotalPages || score.layoutSettings.footerPageNumbering === 'pageOfTotal'
+                        ? `${pageIndex + 1} / ${pages.length}`
+                        : `${pageIndex + 1}`}
                     </text>
                   )}
                 </g>

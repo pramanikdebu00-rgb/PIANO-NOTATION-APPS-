@@ -80,14 +80,15 @@ function drawVectorTie(pdf: jsPDF, x: number, y: number, width: number) {
 }
 
 /**
- * Draw vector quarter note symbol (♩) for tempo marking
+ * Draw vector quarter note symbol for tempo marking
  */
 function drawQuarterNoteSymbol(pdf: jsPDF, x: number, y: number, _size: number) {
   pdf.setFillColor(15, 23, 42);
-  pdf.circle(x + 2, y + 2, 2.5, 'F');
+  // Slanted oval notehead
+  pdf.ellipse(x + 3.2, y + 1.2, 3.2, 2.3, 'F');
   pdf.setDrawColor(15, 23, 42);
-  pdf.setLineWidth(0.9);
-  pdf.line(x + 4.2, y + 2, x + 4.2, y - 6);
+  pdf.setLineWidth(1.0);
+  pdf.line(x + 5.8, y + 1.2, x + 5.8, y - 8.5);
 }
 
 /**
@@ -124,83 +125,127 @@ function renderCanonicalDocumentToPdf(
     pdf.rect(0, 0, pdfWidth, pdfHeight, 'F');
 
     // 2. Score Header
-    if (page.showHeader) {
-      // Title
+    // Page 0 (First Page): ALWAYS render Main Song Title, Subtitle, Tempo, Time Signature, Composer, Lyricist
+    if (page.pageIndex === 0) {
+      // Main Song Title
       pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(18);
+      pdf.setFontSize(22);
       pdf.setTextColor(15, 23, 42);
-      pdf.text(doc.title, pdfWidth / 2, 54 * scale, { align: 'center' });
+      pdf.text(doc.title || 'Untitled Composition', pdfWidth / 2, 52 * scale, { align: 'center' });
 
       // Subtitle
       if (doc.subtitle) {
         pdf.setFont('helvetica', 'italic');
-        pdf.setFontSize(9.5);
+        pdf.setFontSize(11);
         pdf.setTextColor(71, 85, 105);
-        pdf.text(doc.subtitle, pdfWidth / 2, 72 * scale, { align: 'center' });
+        pdf.text(doc.subtitle, pdfWidth / 2, 70 * scale, { align: 'center' });
       }
 
-      // Tempo
-      const tempoY = 116 * scale;
+      // Tempo Marking (Top Left)
+      const tempoY = (doc.subtitle ? 102 : 88) * scale;
       const staffLeft = page.staffMarginLeft * scale;
-      drawQuarterNoteSymbol(pdf, staffLeft, tempoY - 2, 9 * scale);
+      drawQuarterNoteSymbol(pdf, staffLeft, tempoY - 2, 10 * scale);
       pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(8.5);
-      pdf.setTextColor(30, 41, 59);
-      pdf.text(`= ${doc.tempoBpm}`, staffLeft + 10 * scale, tempoY);
+      pdf.setFontSize(9.5);
+      pdf.setTextColor(15, 23, 42);
+      pdf.text(`= ${doc.tempoBpm || 80} BPM`, staffLeft + 12 * scale, tempoY);
 
       // Time Signature & Indian Taal
-      // e.g. "Time Signature : 4/4 (Keharwa Taal)"
       pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(8.5);
+      pdf.setFontSize(9);
       pdf.setTextColor(71, 85, 105);
-      pdf.text(doc.timeSignatureFormatted, staffLeft, 132 * scale);
+      pdf.text(doc.timeSignatureFormatted, staffLeft, tempoY + 14 * scale);
 
-      // Composer & Lyricist
+      // Composer & Lyricist (Top Right)
       const staffRight = (page.pageWidth - page.staffMarginRight) * scale;
       if (doc.composer) {
         pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(9);
+        pdf.setFontSize(9.5);
         pdf.setTextColor(30, 41, 59);
-        pdf.text(doc.composer, staffRight, 116 * scale, { align: 'right' });
+        pdf.text(doc.composer, staffRight, tempoY, { align: 'right' });
       }
       if (doc.lyricist) {
         pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(8);
+        pdf.setFontSize(8.5);
         pdf.setTextColor(100, 116, 139);
-        pdf.text(doc.lyricist, staffRight, 130 * scale, { align: 'right' });
+        pdf.text(`Lyrics: ${doc.lyricist}`, staffRight, tempoY + 12 * scale, { align: 'right' });
       }
-    } else if (page.pageIndex > 0) {
+    } else if (page.showHeader && page.pageIndex > 0) {
       // Running Header on subsequent pages
       const staffLeft = page.staffMarginLeft * scale;
       const staffRight = (page.pageWidth - page.staffMarginRight) * scale;
-      const runY = 30 * scale;
+      const runY = page.headerSpaceFromTop * scale;
 
       pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(8);
+      pdf.setFontSize(Math.round(page.headerFontSize * scale));
       pdf.setTextColor(100, 116, 139);
-      pdf.text(doc.title, staffLeft, runY);
-      if (doc.composer) {
-        pdf.text(doc.composer, staffRight, runY, { align: 'right' });
-      }
-      pdf.setDrawColor(226, 232, 240);
-      pdf.setLineWidth(0.5);
-      pdf.line(staffLeft, 35 * scale, staffRight, 35 * scale);
+
+      const headerTextToDraw = page.headerCustomText || doc.title;
+      const headerX =
+        page.headerAlignment === 'left'
+          ? staffLeft
+          : page.headerAlignment === 'right'
+          ? staffRight
+          : (staffLeft + staffRight) / 2;
+      const headerAlign =
+        page.headerAlignment === 'left'
+          ? 'left'
+          : page.headerAlignment === 'right'
+          ? 'right'
+          : 'center';
+
+      pdf.text(headerTextToDraw, headerX, runY, { align: headerAlign });
     }
 
-    // 3. Page Footer
-    // Strictly individual page number: "1", "2", "3" (never "1/2"!)
-    const footerY = (page.pageHeight - 24) * scale;
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(8);
-    pdf.setTextColor(100, 116, 139);
-    pdf.text(page.pageNumberLabel, pdfWidth / 2, footerY, { align: 'center' });
+    // 3. Page Footer (Canonical, user configurable)
+    if (page.showFooter || page.showPageNumber) {
+      const staffLeft = page.staffMarginLeft * scale;
+      const staffRight = (page.pageWidth - page.staffMarginRight) * scale;
+      const footerBaselineY = (page.pageHeight - page.footerSpaceFromBottom) * scale;
 
-    // Academy footer branding
-    const staffLeft = page.staffMarginLeft * scale;
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(7.5);
-    pdf.setTextColor(148, 163, 184);
-    pdf.text('Pianotastic Academy', staffLeft, footerY);
+      // Custom footer text
+      if (page.showFooter && (page.footerCustomText !== undefined ? page.footerCustomText : doc.copyright)) {
+        const textToDraw = page.footerCustomText !== undefined ? page.footerCustomText : (doc.copyright || '');
+        if (textToDraw) {
+          pdf.setFont('helvetica', 'normal');
+          pdf.setFontSize(Math.round(page.footerFontSize * scale));
+          pdf.setTextColor(100, 116, 139);
+          const fX =
+            page.footerAlignment === 'left'
+              ? staffLeft
+              : page.footerAlignment === 'right'
+              ? staffRight
+              : (staffLeft + staffRight) / 2;
+          const fAlign =
+            page.footerAlignment === 'left'
+              ? 'left'
+              : page.footerAlignment === 'right'
+              ? 'right'
+              : 'center';
+          pdf.text(textToDraw, fX, footerBaselineY, { align: fAlign });
+        }
+      }
+
+      // Page Number
+      if (page.showPageNumber && page.pageNumberLabel) {
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(Math.round(page.footerFontSize * scale));
+        pdf.setTextColor(71, 85, 105);
+        const pX =
+          page.pageNumberPosition === 'left'
+            ? staffLeft
+            : page.pageNumberPosition === 'center'
+            ? (staffLeft + staffRight) / 2
+            : staffRight;
+        const pAlign =
+          page.pageNumberPosition === 'left'
+            ? 'left'
+            : page.pageNumberPosition === 'center'
+            ? 'center'
+            : 'right';
+        pdf.text(page.pageNumberLabel, pX, footerBaselineY, { align: pAlign });
+      }
+    }
 
     // 4. Systems & Measures
     page.systems.forEach((sys) => {
